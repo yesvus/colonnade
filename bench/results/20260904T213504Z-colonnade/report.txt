@@ -1,0 +1,12 @@
+== idle ==
+  combined RSS: mean 73.2 MB, max 73.2 MB, samples 20
+  combined CPU: mean 1.6%, max 1.7%
+  by process:
+    waybar                   mean   73.2 MB  n=20
+
+== churn ==
+  combined RSS: mean 73.2 MB, max 73.2 MB, samples 20
+  combined CPU: mean 1.8%, max 1.9%
+  by process:
+    waybar                   mean   73.2 MB  n=20
+

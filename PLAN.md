@@ -4,6 +4,13 @@
 get there, in what sequence, verified at each step). Update this file's
 checkboxes as phases land; don't let it drift from reality.
 
+**v0.1.0**: running as the author's actual daily-driver bar, single- and
+multi-monitor, benchmarked at 73 MB combined RSS vs. the 147 MB baseline
+(see `bench/README.md`). Everything below "Phase 1" that's marked `[x]`
+has been through real usage, not just a smoke test -- several rounds of
+"look at it live, find the actual bug, fix it, screenshot to confirm"
+are folded into the phase notes below rather than a separate log.
+
 ## Where we are
 
 **Done:**
@@ -30,7 +37,10 @@ checkboxes as phases land; don't let it drift from reality.
       `Mod+Comma`/`Period`, `Mod+BracketLeft`/`Right` unbound (commented),
       validated, hot-reloaded.
 
-**Phase 1: built, compiles, smoke-tested — not yet visually verified.**
+**Phase 1, first pass** (superseded in detail by several later rounds of
+"look at it live on a real screenshot, find the actual bug, fix it" —
+see the v0.1.0 note at the top; kept below as the historical record of
+what shipped in this pass specifically):
 
 - [x] `src/animate.rs` — tick-callback tweening primitive, `Rc<Cell<State>>`
       based (not a raw pointer — an earlier draft used one and would have
@@ -77,11 +87,14 @@ checkboxes as phases land; don't let it drift from reality.
   appears at full target width immediately, a removed one disappears
   immediately. The plan called for this; it didn't make it into this
   pass. Tracked here, not forgotten.
-- **Nothing has been visually verified.** Compiling, not crashing, and
-  processing real snapshots correctly is not the same as the layout,
-  proportions, animation smoothness, or click behavior actually being
-  right — that needs eyes on an actual screen, which the plan's original
-  verification steps (below) still call for and haven't been run.
+- **(Resolved since.)** Nothing had been visually verified as of this
+  pass — since fixed: several rounds of actual screenshots (`grim`,
+  including on the live production bar) turned up and fixed real bugs
+  this smoke test couldn't have caught (stale workspace state, `GtkStack`
+  homogeneous sizing, label size-negotiation dominating width requests,
+  a missing scroll event mask, a missing scroll event *mask on top of
+  that*, two glyph-truncation gaps, an asymmetric shift threshold). None
+  of that would have surfaced from compiling and not crashing alone.
 - Notifications (urgent-highlighting), real app icons, and app-based CSS
   matching are upstream features intentionally not wired into the new
   `Instance` yet (visible as `dead_code` warnings on `cargo build`) —

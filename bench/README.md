@@ -36,15 +36,33 @@ Captures the currently-installed Python daemon (`niri-tab-daemon.py` + its
 `niri msg event-stream` child + `waybar` itself) idle, then under churn.
 Fixture windows are always cleaned up on exit, including on failure (trap).
 
-Once colonnade itself is buildable, an equivalent `colonnade.sh` capture
-script will measure the CFFI module in-process instead — same fixture, same
-`env.sh`, same `report.py`, so the two `report.txt` files are a direct,
-apples-to-apples comparison.
+```bash
+./colonnade.sh [duration_seconds] [fixture_window_count]  # same defaults
+```
+
+Same fixture, same `env.sh`, same `report.py`, measuring `waybar$` alone —
+deliberately not also matching a second process, since there isn't one:
+Colonnade runs in-process via CFFI. The two `report.txt` files are a
+direct, apples-to-apples comparison.
 
 Results land in `results/<UTC timestamp>-<label>/`, each with `samples.csv`
 (raw), `env.json` (manifest), and `report.txt` (summary). Commit these when
 they represent a milestone worth keeping as a reference point — don't commit
 every exploratory run.
+
+## Result: Colonnade vs. the Python daemon
+
+Captured on the same machine, same fixture (8 windows), same day:
+
+| | combined RSS (idle) | combined RSS (churn) | processes matched |
+|---|---|---|---|
+| Python daemon + waybar | 146.8 MB | 147.3 MB | `waybar`, `python3` ×2, `niri msg event-stream` ×2 |
+| Colonnade | 73.2 MB | 73.2 MB | `waybar` alone |
+
+Roughly half — and notably, 73.2 MB is *less* than the old setup's `waybar`
+process was using **by itself** (80.8 MB), before adding the daemon's own
+66 MB on top. Full raw data: `results/20260904T184735Z-baseline-python/`
+and `results/20260904T213504Z-colonnade/`.
 
 ## Reading `report.py`'s output
 
