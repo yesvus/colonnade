@@ -1,55 +1,81 @@
-# Niri Taskbar (for Waybar)
+# Colonnade
 
-This provides a [Waybar][waybar] taskbar for [Niri][niri].
+**The taskbar Windows XP got right, rebuilt for niri's columns.**
 
-The main shift from the builtin `wlr/taskbar` module is that windows are always
-ordered by workspace index, then window ID (which essentially means that the
-windows are ordered by creation time, at least as of Waybar 0.12.0).
+[niri](https://github.com/YaLTeR/niri) arranges windows "in columns on an
+infinite strip going to the right" — its own words. Opening a window never
+resizes the ones you already have open. It's a genuinely better model than a
+single-app-at-a-time desktop, but it leaves you without the one thing that
+made task-switching effortless on a desktop from twenty years ago: a row of
+labeled buttons you can see and click, one per open window, always in the
+same place.
 
-![Example screenshot](images/screenshot.png)
+Colonnade is that row, built to match niri's own model rather than bolting a
+generic taskbar on top of it. A *colonnade* is a row of columns holding up a
+roof — which is exactly what this renders: niri's columns, as a row of tabs.
+Each tab is sized to the fraction of the screen its column actually occupies
+(a third-width column gets a third-width tab), so the bar is a small, honest
+map of your workspace, not just a list of names.
+
+## Status
+
+Early-stage fork of [LawnGnome/niri-taskbar][upstream], in active
+development. Upstream gives us the hard parts already solved — a real
+[Waybar CFFI module][cffi] with an in-process niri IPC event stream, so there
+are no polling forks and no shelling out per window-focus-change. Everything
+below is what Colonnade adds on top:
+
+- [ ] Tabs grouped by niri column (`pos_in_scrolling_layout`), not a flat list
+- [ ] Tab width proportional to column width (`tile_size` vs output width)
+- [ ] Smooth scroll animation on focus change, driven by GTK's frame clock —
+      not an instant relayout
+- [ ] Cairo-masked label fade for overflowing titles, and a real edge fade on
+      an overflowing tab strip (GTK3 has no CSS `mask-image`, so this has to
+      be drawn, not styled)
+- [ ] Rename the build artifact from `libniri_taskbar.so` to
+      `libcolonnade.so` once the above lands
+
+Until the checklist above is done, build/install instructions are inherited
+from upstream and describe `niri-taskbar`, not `colonnade` — see below.
+
+A performance budget is part of the spec, not an afterthought: see
+[`bench/`](bench/) for the trusted, checked-in benchmark suite and the
+current Python-daemon baseline it has to beat.
+
+## Roadmap: Lumen
+
+Colonnade is meant to also work as a **standalone drop-in module** for
+anyone already running Waybar — you should never be forced into more than
+you asked for. But it's also the first piece of a larger idea: **Lumen**, a
+complete, polished, low-resource menubar suite for niri (bar + control panel
++ settings app), for people who want a finished shell rather than assembling
+one module at a time. Colonnade ships first, on its own, either way.
 
 ## Installation
-
-If you package niri-taskbar for another distro/OS, please let me know and I'll
-update the README.
-
-### Arch Linux
-
-@coreymwamba has kindly packaged this as [the `waybar-niri-taskbar` package in
-the AUR][aur].
-
-### From source
-
-Users of other distributions and OSes will need to build from source.
-
-At the moment, this needs to built from source.
-distro, let me know and I'll update the README.)
 
 ### Requirements
 
 - Rust 1.87.0 or later
-- Niri (with a version corresponding to the version in the `niri-taskbar` crate
-  version; eg `0.4.0+niri-25.11` is specifically for Niri 25.11)
-- Gtk+ 3 (including the development package on distros that separate those out)
-- Waybar 0.12.0 (or any version that's API compatible with 0.12, which will
-  _probably_ include later versions, but I have no actual knowledge there)
+- Niri (with a version corresponding to the version in the `niri-taskbar`
+  crate version; eg `0.4.0+niri-25.11` is specifically for Niri 25.11 — this
+  constraint is being widened as part of the Colonnade work, see
+  [Status](#status))
+- Gtk+ 3 (including the development package on distros that separate those
+  out)
+- Waybar 0.12.0 (or any version that's API compatible with 0.12)
 
 ### Building
-
-The standard Rust build process should work fine:
 
 ```bash
 $ cargo build --release
 ```
 
-This will give you a shared library module at
-`target/release/libniri_taskbar.so`. Feel free to move that wherever makes
-sense.
+This gives you a shared library module at `target/release/libniri_taskbar.so`
+(pending the rename above).
 
 ## Configuration
 
-This uses the normal configuration for a [CFFI Waybar module][cffi], which in
-practice will look something like this:
+Standard [CFFI Waybar module][cffi] configuration:
 
 ```jsonc
 {
@@ -61,121 +87,15 @@ practice will look something like this:
 }
 ```
 
-### Application highlighting
+See [upstream's README][upstream] for application highlighting, multi-output
+support, notification integration, and styling — all inherited as-is for now.
 
-In addition to [notification support](#notifications), you can highlight
-applications based on their app ID and title by configuring application rules in
-the Waybar configuration.
+## Credit
 
-For example, to highlight a Signal window that starts with `(1)` (or any other
-number), indicating pending notifications, you could configure the taskbar like
-so:
+Forked from [LawnGnome/niri-taskbar][upstream] (MIT), which did the actual
+hard work: the niri IPC event stream, the CFFI/GTK plumbing, icon lookup,
+and notification matching. Colonnade's job is the tab strip on top of that
+foundation.
 
-```jsonc
-{
-  "cffi/niri-taskbar": {
-    // module_path
-    "apps": {
-      "signal": [
-        {
-          "match": "\\([0-9]+\\)$",
-          "class": "unread",
-        },
-      ],
-    },
-  },
-}
-```
-
-Each key within the `apps` object is a Wayland app ID, which can have one or
-more rules set within it. Each rule must have a `match`, which is a regex that
-will be matched against the window title, and a `class`, which is a CSS class
-that will be added to the button element if the regex matches.
-
-If more than one rule matches for a single app ID, all matching classes will be
-added.
-
-The easiest way to get the app ID for a window is to ask Niri with `niri msg
-windows`. Note that app IDs are case sensitive.
-
-### Multiple outputs
-
-By default, the taskbar will only show applications running on the same output
-as the taskbar itself. You can enable the `show_all_outputs` option to show all
-applications on all outputs:
-
-```jsonc
-{
-  "cffi/niri-taskbar": {
-    // other settings
-    "show_all_outputs": true,
-  },
-}
-```
-
-Note that multiple output support is currently experimental, and may have some
-quirks. Please open an issue with your use case if it's not working as you
-expect!
-
-### Notifications
-
-You can enable the `notifications` configuration option to have the taskbar
-listen to notifications and attempt to highlight the app that sent the
-notification.
-
-Configuration wise:
-
-```jsonc
-{
-  "cffi/niri-taskbar": {
-    // other settings
-    "notifications": true,
-  },
-}
-```
-
-Highlighted buttons will gain the `.urgent` CSS class. Default styling is
-included, but can be overridden [as described below](#styling).
-
-## Styling
-
-The taskbar uses [the same Gtk styling mechanism as Waybar][style]. The top
-level taskbar element is given the class `.niri-taskbar`, and contains `button`
-elements within it. The only CSS class that is applied by default is the
-`focused` class, which is added to the button for the currently focused window.
-
-The default styling assumes a dark background. It provides a basic hover
-effect, and highlights the focused window.
-
-For a light background, something like this is likely good:
-
-```css
-.niri-taskbar button:hover {
-  background: rgba(0, 0, 0, 0.5);
-}
-
-.niri-taskbar button.focused {
-  background: rgba(0, 0, 0, 0.3);
-}
-```
-
-If you apply custom CSS classes using application rules as described above,
-then those can be styled in the same way. For instance, with the `unread` class
-demonstrated above, you could add a border highlight like so:
-
-```css
-.niri-taskbar button {
-  /* This is useful to prevent the icon being resized when there's no unread. */
-  border-bottom: solid 3px transparent;
-}
-
-.niri-taskbar button.unread {
-  border-bottom: solid 3px white;
-}
-```
-
-[aur]: https://aur.archlinux.org/packages/waybar-niri-taskbar
 [cffi]: https://github.com/Alexays/Waybar/wiki/Module:-CFFI
-[niri]: https://github.com/YaLTeR/niri
-[style]: https://github.com/Alexays/Waybar/wiki/Styling
-[waybar]: https://github.com/Alexays/Waybar
+[upstream]: https://github.com/LawnGnome/niri-taskbar

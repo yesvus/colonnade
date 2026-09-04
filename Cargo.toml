@@ -1,10 +1,10 @@
 [package]
-name = "niri-taskbar"
-description = "Niri taskbar module for Waybar"
-version = "0.4.0+niri.25.11"
+name = "colonnade"
+description = "Column-grouped, niri-aware taskbar module for Waybar (fork of niri-taskbar)"
+version = "0.1.0"
 edition = "2024"
 license = "MIT"
-repository = "https://github.com/LawnGnome/niri-taskbar"
+repository = "https://github.com/yesvus/colonnade"
 rust-version = "1.87.0"
 
 [lib]
