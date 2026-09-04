@@ -12,8 +12,16 @@
 
 use crate::niri::{Window, WorkspaceInfo};
 
+/// Caps a collapsed marker's own width -- without this, a workspace with
+/// enough windows (31, in one real case found while testing) renders a
+/// marker exactly as wide as the bloomed tab group was before slicing was
+/// added, defeating the point. `…` replaces the last glyph when truncated
+/// rather than just hard-cutting, so there's a visible hint that the count
+/// isn't the whole story.
+const MAX_MARKER_GLYPHS: usize = 10;
+
 /// The marker text for one collapsed workspace: one glyph per window,
-/// left to right in column order.
+/// left to right in column order, capped at `MAX_MARKER_GLYPHS`.
 pub fn marker_text(workspace: &WorkspaceInfo, windows: &[Window]) -> String {
     let mut in_workspace: Vec<&Window> = windows
         .iter()
@@ -21,10 +29,28 @@ pub fn marker_text(workspace: &WorkspaceInfo, windows: &[Window]) -> String {
         .collect();
     in_workspace.sort_by_key(|w| w.layout.pos_in_scrolling_layout.unwrap_or_default());
 
-    in_workspace
-        .into_iter()
-        .map(|w| glyph_for(workspace, w))
-        .collect()
+    capped(
+        in_workspace.into_iter().map(|w| glyph_for(workspace, w)),
+        MAX_MARKER_GLYPHS,
+    )
+}
+
+/// Caps any glyph sequence at `max` characters, replacing the last one
+/// with `…` when truncated. Public so overflow ticks (a bloomed
+/// workspace's own windows outside the visible tab slice -- see
+/// `workspace_slot.rs`) get the same width cap as collapsed markers,
+/// rather than growing unboundedly with window count the same way the
+/// marker text did before this existed.
+pub fn capped(glyphs: impl Iterator<Item = char>, max: usize) -> String {
+    let glyphs: Vec<char> = glyphs.collect();
+    if glyphs.len() <= max {
+        glyphs.into_iter().collect()
+    } else {
+        glyphs[..max.saturating_sub(1)]
+            .iter()
+            .collect::<String>()
+            + "…"
+    }
 }
 
 /// Public so overflow ticks (the bloomed workspace's own windows that fall

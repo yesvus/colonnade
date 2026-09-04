@@ -38,10 +38,49 @@ use crate::{
 const MARKER: &str = "marker";
 const GROUP: &str = "group";
 
-/// How many tabs are ever visible at once, sliced and centered on the
-/// current column when there are more than this. Matches the Python
-/// daemon's `max_slots` default exactly.
-const MAX_VISIBLE_TABS: usize = 6;
+/// Real pixel budget for the visible tab group -- not a fixed tab
+/// *count*. A fixed count (the original approach here) still let the
+/// group blow past the screen whenever tabs happened to be wide (e.g.
+/// several full-width columns in a row): 6 tabs at ~260px each is
+/// 1560px, easily pushing modules-right off the monitor. This bounds the
+/// actual on-screen width instead, so however many tabs fit at their
+/// real (unshrunk) width is how many show.
+const MAX_GROUP_WIDTH_PX: i32 = 520;
+
+/// Greedily includes columns rightward from `start` while the running
+/// total stays within `budget_px`. Always includes at least the starting
+/// column even if it alone exceeds budget, so this never returns an
+/// empty range for a non-empty input.
+fn expand_right(columns: &[Column<'_>], start: usize, budget_px: i32) -> usize {
+    let mut width = 0;
+    let mut end = start;
+    while end < columns.len() {
+        let w = columns[end].target_width_px;
+        if end > start && width + w > budget_px {
+            break;
+        }
+        width += w;
+        end += 1;
+    }
+    end
+}
+
+/// Caps each overflow-tick string the same way `glyph::marker_text` caps a
+/// collapsed marker -- see that constant's doc comment for why this needs
+/// to exist at all.
+const MAX_OVERFLOW_GLYPHS: usize = 6;
+
+/// Workspace idx, or its custom name if it has one. Shown always now, both
+/// bloomed and collapsed -- there was previously no way to tell which
+/// workspace a collapsed marker even was.
+fn workspace_label(workspace: &WorkspaceInfo) -> String {
+    workspace
+        .name
+        .as_deref()
+        .filter(|n| !n.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| workspace.idx.to_string())
+}
 
 pub struct WorkspaceSlot {
     stack: gtk::Stack,
@@ -61,6 +100,14 @@ pub struct WorkspaceSlot {
     overflow_left: gtk::Label,
     overflow_right: gtk::Label,
     tabs: BTreeMap<u64, Tab>,
+    /// The window id anchoring the left edge of the visible slice.
+    /// Persisted across renders rather than recomputed by centering on
+    /// the current column every time -- centering on every focus change
+    /// meant the current tab always sat at the same fixed offset (e.g.
+    /// position 4 of 6), so the slice shifted far more eagerly than it
+    /// should have. With a persisted anchor, the slice only moves once
+    /// focus actually reaches its trailing edge (see `set_bloomed`).
+    anchor: Option<u64>,
     state: State,
     workspace_id: u64,
 }
@@ -117,6 +164,7 @@ impl WorkspaceSlot {
             overflow_left,
             overflow_right,
             tabs: BTreeMap::new(),
+            anchor: None,
             state: state.clone(),
             workspace_id,
         };
@@ -184,45 +232,77 @@ impl WorkspaceSlot {
     }
 
     /// Renders this workspace as bloomed: a workspace-number label,
-    /// followed by up to `MAX_VISIBLE_TABS` tabs sliced and centered on
-    /// the current column.
+    /// followed by however many tabs fit `MAX_GROUP_WIDTH_PX` at their
+    /// real (unshrunk) width, anchored per `Self::anchor`'s doc comment.
     pub fn set_bloomed(&mut self, workspace: &WorkspaceInfo, windows: &[Window], output_width: f64) {
-        let label = workspace
-            .name
-            .as_deref()
-            .filter(|n| !n.is_empty())
-            .map(str::to_string)
-            .unwrap_or_else(|| workspace.idx.to_string());
-        self.number.set_text(&label);
+        self.number.set_text(&workspace_label(workspace));
 
         let columns = column::group(windows, output_width);
         let total = columns.len();
+
+        if total == 0 {
+            self.overflow_left.set_text("");
+            self.overflow_right.set_text("");
+            for (_, tab) in self.tabs.iter() {
+                self.group.remove(tab.widget());
+            }
+            self.tabs.clear();
+            self.anchor = None;
+            self.group.show_all();
+            self.stack.set_visible_child_name(GROUP);
+            return;
+        }
 
         let current_idx = columns
             .iter()
             .position(|c| c.window.is_focused || Some(c.window.id) == workspace.active_window_id)
             .unwrap_or(0);
 
-        let (start, visible): (usize, &[Column<'_>]) = if total <= MAX_VISIBLE_TABS {
-            (0, &columns)
-        } else {
-            let start = current_idx
-                .saturating_sub(MAX_VISIBLE_TABS / 2)
-                .min(total - MAX_VISIBLE_TABS);
-            (start, &columns[start..start + MAX_VISIBLE_TABS])
-        };
+        let mut start = self
+            .anchor
+            .and_then(|id| columns.iter().position(|c| c.window.id == id))
+            .unwrap_or(current_idx);
+
+        // Moving left (or the anchored window closed) should feel
+        // immediate -- pull the window to include wherever focus actually
+        // is, no lookahead delay on this side.
+        if current_idx < start {
+            start = current_idx;
+        }
+
+        let mut end = expand_right(&columns, start, MAX_GROUP_WIDTH_PX);
+
+        // Only shift right once focus reaches the *second-to-last*
+        // visible tab, not sooner -- a fixed centering formula (the
+        // original approach here) always placed the current tab at the
+        // same offset from the start of the slice regardless of how much
+        // room was left, so it shifted noticeably earlier than it needed
+        // to. Looping handles a single-column shift still leaving current
+        // at the edge (e.g. the next column is unusually wide).
+        while current_idx + 2 >= end && end < total {
+            start += 1;
+            end = expand_right(&columns, start, MAX_GROUP_WIDTH_PX);
+        }
+
+        self.anchor = Some(columns[start].window.id);
+        let visible = &columns[start..end];
         // Windows outside the visible slice render as the same glyph tick
         // marks collapsed workspaces use, not a "+N" numeral -- one visual
         // language for "more windows exist here" everywhere it appears,
-        // rather than two different indicator styles.
-        let left_text: String = columns[..start]
-            .iter()
-            .map(|c| glyph::glyph_for(workspace, c.window))
-            .collect();
-        let right_text: String = columns[start + visible.len()..]
-            .iter()
-            .map(|c| glyph::glyph_for(workspace, c.window))
-            .collect();
+        // rather than two different indicator styles. Capped the same way
+        // marker_text is: a lot of overflow (the same 31-window workspace
+        // that broke the old GtkScrolledWindow approach) would otherwise
+        // just recreate that unbounded-width problem one level up.
+        let left_text = glyph::capped(
+            columns[..start].iter().map(|c| glyph::glyph_for(workspace, c.window)),
+            MAX_OVERFLOW_GLYPHS,
+        );
+        let right_text = glyph::capped(
+            columns[start + visible.len()..]
+                .iter()
+                .map(|c| glyph::glyph_for(workspace, c.window)),
+            MAX_OVERFLOW_GLYPHS,
+        );
         self.overflow_left.set_text(&left_text);
         self.overflow_right.set_text(&right_text);
 
@@ -265,14 +345,15 @@ impl WorkspaceSlot {
     /// output, not pre-filtered -- `glyph::marker_text` filters by
     /// workspace itself.
     pub fn set_collapsed(&mut self, workspace: &WorkspaceInfo, windows: &[Window]) {
-        let text = glyph::marker_text(workspace, windows);
+        let glyphs = glyph::marker_text(workspace, windows);
         // An empty, focused (bloom-eligible) workspace is handled by
         // set_bloomed's caller instead; a collapsed workspace with no
         // windows is never shown at all -- the caller doesn't create a
         // slot for it. Still guard here rather than show a blank marker if
         // that assumption is ever violated.
+        let glyphs = if glyphs.is_empty() { "·" } else { &glyphs };
         self.marker
-            .set_text(if text.is_empty() { "·" } else { &text });
+            .set_text(&format!("{} {glyphs}", workspace_label(workspace)));
         self.stack.set_visible_child_name(MARKER);
     }
 }
