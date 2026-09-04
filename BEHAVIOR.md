@@ -31,6 +31,31 @@ as a second daemon alongside the tab strip — see README for the resource
 argument (zero extra processes, both live in the same CFFI module already
 inside waybar's GTK process).
 
+## Toolkit: GTK3, not a choice
+
+Colonnade is a Waybar CFFI module, which means it's handed a raw
+`GtkWidget*` from Waybar's own already-running process
+(`InitInfo::get_root_widget()`). Waybar 0.15.0 links `libgtk-3.so.0` and
+`libgtk-layer-shell.so.0` (confirmed via `ldd`, and `waybar-cffi`'s own
+docs: *"Waybar still uses Gtk 3 for its UI, so modules are required to also
+use it"*) — not GTK4. A GTK4 widget can't be embedded in a GTK3 container;
+they're separate object systems with separate rendering backends (GTK3:
+direct cairo per-widget draw; GTK4: GSK scene-graph). This isn't a
+preference, it's a consequence of living inside Waybar's process at all,
+which is the entire premise of the zero-extra-process pitch.
+
+The tradeoff this forces: GTK4 has `gtk_snapshot_push_mask()`, a real API
+for exactly the label/edge-fade masking this project needs — GTK3 doesn't,
+so Phase 3 does it manually via cairo `draw`-signal masking instead
+(works, just not a one-liner). Considered and rejected: dropping the
+Waybar-module architecture entirely to own a `wlr-layer-shell` surface
+directly, which would make GTK4 available. Rejected because it trades
+"zero extra RSS, shares Waybar's already-loaded GTK3" for "a second
+GTK4+GSK+driver stack in a new process" — directly against the ~147 MB
+baseline this project exists to beat. That tradeoff is worth taking later,
+for Lumen, where owning the process is already the plan — not now, for a
+module whose whole point is *not* owning a process.
+
 ## Hard invariant: one window per column
 
 Colonnade's tab model — one tab per column, width proportional to that
