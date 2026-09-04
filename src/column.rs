@@ -40,11 +40,19 @@ pub struct Column<'a> {
 /// is allowed to grow unboundedly as more columns open, same as niri's
 /// own strip; the caller (`workspace_slot.rs`) is what bounds how many of
 /// them are actually shown.
+///
+/// `dynamic` selects between this proportional sizing (`true`, the
+/// default -- `Config::dynamic_tab_width()`) and a uniform width for
+/// every tab (`false`: every tab gets exactly `width_scale_px`,
+/// regardless of its real column's proportion) for anyone who'd rather
+/// have a traditional flat taskbar look than width that varies with
+/// window size.
 pub fn group<'a>(
     windows: &'a [Window],
     output_width: f64,
     width_scale_px: f64,
     min_tab_width_px: i32,
+    dynamic: bool,
 ) -> Vec<Column<'a>> {
     let mut columns: Vec<Column<'a>> = windows
         .iter()
@@ -55,8 +63,11 @@ pub fn group<'a>(
             } else {
                 0.0
             };
-            let target_width_px =
-                ((width_fraction * width_scale_px).round() as i32).max(min_tab_width_px);
+            let target_width_px = if dynamic {
+                ((width_fraction * width_scale_px).round() as i32).max(min_tab_width_px)
+            } else {
+                (width_scale_px.round() as i32).max(min_tab_width_px)
+            };
             Some(Column {
                 index,
                 window,

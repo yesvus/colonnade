@@ -148,12 +148,30 @@ config:
         "tab_width_scale_px": 260,
         "min_tab_width_px": 40,
         "max_group_width_px": 620,
-        "max_overflow_glyphs": 10
+        "max_overflow_glyphs": 10,
+        "font_size_pt": 7.0,
+        "dynamic_tab_width": true
     }
 }
 ```
 
-All four have defaults matching what's already tuned; only the ones a
+`font_size_pt` applies to every piece of text Colonnade draws (tabs,
+workspace number, collapsed markers, overflow ticks) via a screen-wide CSS
+provider at `GTK_STYLE_PROVIDER_PRIORITY_USER`, not left to the external
+Waybar stylesheet -- one source of truth rather than two potentially
+disagreeing ones. It's also the actual lever on vertical tab height: once
+padding and min-height are already at zero (see the GTK3-not-GTK4 note's
+button-height fix), GTK sizes a button from its label's rendered text
+height, so a smaller font is what makes the bar visually thinner, not
+just smaller-looking text.
+
+`dynamic_tab_width` (default `true`) toggles whether tab width tracks the
+real niri column's proportion at all -- set `false` for uniform-width
+tabs (every tab gets exactly `tab_width_scale_px`) instead, a traditional
+flat-taskbar look for anyone who'd rather not have width vary with window
+size.
+
+All fields have defaults matching what's already tuned; only the ones a
 user wants to override need to appear at all. Any further constant that
 turns out to need by-eye tuning again should go here too, not back into a
 hardcoded const.

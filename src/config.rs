@@ -54,6 +54,26 @@ pub struct Layout {
     /// as an uncapped tab group would have been.
     #[serde(default = "default_max_overflow_glyphs")]
     max_overflow_glyphs: usize,
+    /// Font size for every piece of text Colonnade itself draws (tabs,
+    /// workspace number, collapsed markers, overflow ticks) -- applied via
+    /// an internal CSS provider at GTK_STYLE_PROVIDER_PRIORITY_USER (see
+    /// `lib.rs`'s `init`), not left to the external Waybar stylesheet, so
+    /// there's exactly one place this is controlled from rather than two
+    /// competing ones. Directly affects vertical tab height too: GTK sizes
+    /// a button from its label's rendered text height once padding/min-
+    /// height are already at zero, so a smaller font is the actual lever
+    /// for a visually thinner bar, not just smaller-looking text.
+    #[serde(default = "default_font_size_pt")]
+    font_size_pt: f64,
+    /// When true (default), each tab's width tracks its real niri column
+    /// width, independently per column -- see BEHAVIOR.md and
+    /// `column.rs`'s doc comment on why this specifically doesn't shrink
+    /// tabs when new ones open. Set false for uniform-width tabs instead
+    /// (every tab gets exactly `tab_width_scale_px`, ignoring the column's
+    /// actual proportion) -- a traditional flat taskbar look, for anyone
+    /// who'd rather not have tab width vary with window size at all.
+    #[serde(default = "default_dynamic_tab_width")]
+    dynamic_tab_width: bool,
 }
 
 impl Default for Layout {
@@ -63,6 +83,8 @@ impl Default for Layout {
             min_tab_width_px: default_min_tab_width_px(),
             max_group_width_px: default_max_group_width_px(),
             max_overflow_glyphs: default_max_overflow_glyphs(),
+            font_size_pt: default_font_size_pt(),
+            dynamic_tab_width: default_dynamic_tab_width(),
         }
     }
 }
@@ -73,6 +95,16 @@ fn default_tab_width_scale_px() -> f64 {
 
 fn default_min_tab_width_px() -> i32 {
     40
+}
+
+fn default_font_size_pt() -> f64 {
+    // Smaller than the 8pt this started at -- also the real lever on tab
+    // height, see the field doc comment above.
+    7.0
+}
+
+fn default_dynamic_tab_width() -> bool {
+    true
 }
 
 fn default_max_group_width_px() -> i32 {
@@ -185,6 +217,14 @@ impl Config {
 
     pub fn max_overflow_glyphs(&self) -> usize {
         self.layout.max_overflow_glyphs
+    }
+
+    pub fn font_size_pt(&self) -> f64 {
+        self.layout.font_size_pt
+    }
+
+    pub fn dynamic_tab_width(&self) -> bool {
+        self.layout.dynamic_tab_width
     }
 }
 

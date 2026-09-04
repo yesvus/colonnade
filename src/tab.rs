@@ -45,6 +45,15 @@ impl Tab {
         button.style_context().add_class("colonnade-tab");
 
         let label = gtk::Label::new(None);
+        // The button's own "colonnade-tab" class controls its background/
+        // border fine, but font-size didn't inherit down to this label
+        // from it (found by looking at it: the workspace-number label,
+        // which gets its class directly, shrank correctly; tab text,
+        // styled only via its *parent* button's class, didn't move at
+        // all). Putting the class on the label too makes lib.rs's
+        // font-size CSS provider match it directly, no inheritance
+        // required.
+        label.style_context().add_class("colonnade-tab");
         label.set_xalign(0.0);
         label.set_ellipsize(gtk::pango::EllipsizeMode::End);
         // Ellipsize alone doesn't stop the label from *requesting* its

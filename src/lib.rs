@@ -15,7 +15,7 @@ use waybar_cffi::{
     gtk::{
         self, Orientation, gio,
         glib::MainContext,
-        prelude::{BoxExt, ContainerExt, StyleContextExt, WidgetExt},
+        prelude::{BoxExt, ContainerExt, CssProviderExt, StyleContextExt, WidgetExt},
     },
     waybar_module,
 };
@@ -75,10 +75,39 @@ async fn init(info: &waybar_cffi::InitInfo, state: State) -> Result<(), Error> {
     container.style_context().add_class("colonnade");
     root.add(&container);
 
+    apply_font_size(state.config().font_size_pt());
+
     let context = MainContext::default();
     context.spawn_local(async move { Instance::new(state, container).task().await });
 
     Ok(())
+}
+
+/// Applies `Config::font_size_pt()` to every class of text Colonnade
+/// draws, via a screen-wide CSS provider at USER priority (the highest
+/// commonly-used priority, so this wins over whatever the external Waybar
+/// stylesheet says for these specific classes) -- one source of truth for
+/// font size, controlled from the module config rather than needing a
+/// hand CSS edit for something that's really just a number.
+fn apply_font_size(font_size_pt: f64) {
+    let css = format!(
+        ".colonnade-tab, .workspace-marker, .workspace-number, \
+         .overflow-left, .overflow-right {{ font-size: {font_size_pt}pt; }}"
+    );
+    let provider = gtk::CssProvider::new();
+    if let Err(e) = provider.load_from_data(css.as_bytes()) {
+        tracing::warn!(%e, "failed to load font-size CSS override");
+        return;
+    }
+    let Some(screen) = gtk::gdk::Screen::default() else {
+        tracing::warn!("no default Gdk screen; cannot apply font-size override");
+        return;
+    };
+    gtk::StyleContext::add_provider_for_screen(
+        &screen,
+        &provider,
+        gtk::STYLE_PROVIDER_PRIORITY_USER,
+    );
 }
 
 /// Which output this bar instance is on, and that output's logical width

@@ -264,6 +264,7 @@ impl WorkspaceSlot {
             output_width,
             config.tab_width_scale_px(),
             config.min_tab_width_px(),
+            config.dynamic_tab_width(),
         );
         let total = columns.len();
 
