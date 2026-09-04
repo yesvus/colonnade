@@ -113,7 +113,7 @@ Standard [CFFI Waybar module][cffi] configuration:
   "cffi/colonnade": {
     "module_path": "/your/path/to/libcolonnade.so",
 
-    // Optional -- all four have sane defaults; only override what you
+    // Optional -- every one has a sane default; only override what you
     // need. See BEHAVIOR.md's "Layout is config-tunable" section.
     "layout": {
       "tab_width_scale_px": 260,   // width unit a full-width column's tab
@@ -130,9 +130,22 @@ Standard [CFFI Waybar module][cffi] configuration:
                                     // wide, LOWER this so the tab group
                                     // can't grow into them. Raise it if
                                     // you have plenty of empty bar space.
-      "max_overflow_glyphs": 10    // caps collapsed-marker and overflow-
+      "max_overflow_glyphs": 10,   // caps collapsed-marker and overflow-
                                     // tick glyph strings ("…" when
                                     // truncated)
+      "font_size_pt": 9.0,         // every piece of text Colonnade draws.
+                                    // Text size only -- it is not the
+                                    // lever on tab height, see below
+      "tab_height_px": 22,         // a tab pill's drawn height, border
+                                    // included. Tabs sit centred in the
+                                    // bar, so this is exact rather than
+                                    // "text plus whatever padding". Even
+                                    // values centre evenly in an even bar
+                                    // height. Floor is text height plus
+                                    // border, ~17px at 9pt
+      "dynamic_tab_width": true    // false gives every tab the same width
+                                    // (a flat-taskbar look) instead of
+                                    // tracking each column's proportion
     }
   }
 }

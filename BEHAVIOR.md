@@ -149,8 +149,9 @@ config:
         "min_tab_width_px": 40,
         "max_group_width_px": 620,
         "max_overflow_glyphs": 10,
-        "font_size_pt": 7.0,
-        "dynamic_tab_width": true
+        "font_size_pt": 9.0,
+        "dynamic_tab_width": true,
+        "tab_height_px": 22
     }
 }
 ```
@@ -159,11 +160,33 @@ config:
 workspace number, collapsed markers, overflow ticks) via a screen-wide CSS
 provider at `GTK_STYLE_PROVIDER_PRIORITY_USER`, not left to the external
 Waybar stylesheet -- one source of truth rather than two potentially
-disagreeing ones. It's also the actual lever on vertical tab height: once
-padding and min-height are already at zero (see the GTK3-not-GTK4 note's
-button-height fix), GTK sizes a button from its label's rendered text
-height, so a smaller font is what makes the bar visually thinner, not
-just smaller-looking text.
+disagreeing ones. It is a text-size knob only. It was documented here as
+the lever on tab height too, and that was wrong: see `tab_height_px`.
+
+`tab_height_px` (default `22`) is a tab pill's drawn height in pixels,
+border included, margins excluded. Tabs looked too tall for a long time
+and every attempted fix -- zeroing `min-height`, zeroing padding, fixing
+selector specificity, shrinking the font -- moved the number a little and
+never solved it, because all of them shrink what the button *requests*
+and the request was never what was being drawn. A `GtkBox` hands each
+child the full cross-axis extent by default, so every tab was stretched
+to the entire bar height: measured, a natural height of 17px allocated
+26px, the bar's own height, with every parent up to Waybar's toplevel
+allocated 26 too.
+
+Tabs are `Align::Center` now, so a button takes its natural height and
+sits centred in whatever bar height Waybar ends up with. On top of that,
+the same CSS provider zeroes the tab button's vertical padding, vertical
+margin and `min-height`, and `tab.rs` requests `tab_height_px` directly.
+Without that zeroing the height would be text plus whatever the external
+stylesheet happens to add, and a size request can only ever raise that,
+never lower it. With it, the request *is* the height and the leftover bar
+space splits evenly above and below. Even values divide evenly in an even
+bar height: at the common 26px bar, 22 leaves exactly 2px top and bottom.
+The floor is text height plus border, around 17px at 9pt, since GTK will
+not shrink a widget below what its label needs; ask for less and you get
+the floor, and lower `font_size_pt` to go below it. Horizontal padding is
+deliberately left to the stylesheet -- that is styling, not geometry.
 
 `dynamic_tab_width` (default `true`) toggles whether tab width tracks the
 real niri column's proportion at all -- set `false` for uniform-width

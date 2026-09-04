@@ -75,7 +75,7 @@ async fn init(info: &waybar_cffi::InitInfo, state: State) -> Result<(), Error> {
     container.style_context().add_class("colonnade");
     root.add(&container);
 
-    apply_font_size(state.config().font_size_pt());
+    apply_style(state.config());
 
     let context = MainContext::default();
     context.spawn_local(async move { Instance::new(state, container).task().await });
@@ -83,16 +83,27 @@ async fn init(info: &waybar_cffi::InitInfo, state: State) -> Result<(), Error> {
     Ok(())
 }
 
-/// Applies `Config::font_size_pt()` to every class of text Colonnade
-/// draws, via a screen-wide CSS provider at USER priority (the highest
-/// commonly-used priority, so this wins over whatever the external Waybar
-/// stylesheet says for these specific classes) -- one source of truth for
-/// font size, controlled from the module config rather than needing a
-/// hand CSS edit for something that's really just a number.
-fn apply_font_size(font_size_pt: f64) {
+/// Applies the config's own text size and tab geometry via a screen-wide
+/// CSS provider at USER priority (the highest commonly-used priority, so
+/// this wins over whatever the external Waybar stylesheet says for these
+/// specific classes) -- one source of truth for numbers that are really
+/// just numbers, rather than needing a hand CSS edit for each.
+///
+/// The vertical padding/margin zeroing is what makes `tab_height_px` mean
+/// something exact. A tab's drawn height would otherwise be text height
+/// plus whatever vertical padding, border and margin the stylesheet
+/// happens to carry, and `tab.rs`'s height request can only ever raise
+/// that, never lower it. Zeroed here, the request is the height, and the
+/// leftover bar space splits evenly above and below (see `Align::Center`
+/// in `tab.rs`). Horizontal padding is deliberately untouched: that's
+/// pure styling and the stylesheet should keep owning it.
+fn apply_style(config: &Config) {
+    let font_size_pt = config.font_size_pt();
     let css = format!(
         ".colonnade-tab, .workspace-marker, .workspace-number, \
-         .overflow-left, .overflow-right {{ font-size: {font_size_pt}pt; }}"
+         .overflow-left, .overflow-right {{ font-size: {font_size_pt}pt; }}\n\
+         button.colonnade-tab {{ padding-top: 0; padding-bottom: 0; \
+         margin-top: 0; margin-bottom: 0; min-height: 0; }}"
     );
     let provider = gtk::CssProvider::new();
     if let Err(e) = provider.load_from_data(css.as_bytes()) {

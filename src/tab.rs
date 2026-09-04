@@ -16,13 +16,19 @@ use std::fmt::Debug;
 use waybar_cffi::gtk::{
     self,
     glib::Cast,
-    prelude::{ButtonExt, ContainerExt, LabelExt, StyleContextExt, WidgetExt},
+    prelude::{BoxExt, ButtonExt, ContainerExt, LabelExt, StyleContextExt, WidgetExt},
 };
 
 use crate::{animate::Animator, column::Column, state::State};
 
+/// Pixels between a tab's icon and its title. 6px, matching the gap the
+/// workspace number keeps from whatever follows it, so the two spacings on
+/// the strip are the same number rather than two independent guesses.
+const ICON_GAP_PX: i32 = 6;
+
 pub struct Tab {
     button: gtk::Button,
+    icon: gtk::Label,
     label: gtk::Label,
     width: Animator,
     window_id: u64,
@@ -43,6 +49,39 @@ impl Tab {
 
         let button = gtk::Button::new();
         button.style_context().add_class("colonnade-tab");
+        // The real reason tabs looked tall. A GtkBox hands every child the
+        // full cross-axis extent by default (valign: Fill), so each tab
+        // button was stretched to the entire bar height regardless of what
+        // it actually asked for -- measured: natural height 17px (13px of
+        // text + 1px border + 1px margin, top and bottom), allocated 26px,
+        // exactly the bar's own height, and every parent widget up to
+        // waybar's toplevel allocated 26 too. That's why zeroing padding
+        // and min-height, fixing selector specificity, and shrinking
+        // font-size each only nibbled at it: they all shrink the *request*,
+        // which was never what was being drawn. Center makes the button
+        // take its natural height and sit centred in whatever bar height
+        // is configured, which also makes vertical `padding` in the
+        // stylesheet a working lever on pill height for the first time.
+        button.set_valign(gtk::Align::Center);
+
+        // Icon and title are two labels in a spaced box, not one string of
+        // "icon + space + title". The space character was doing the
+        // separating, and a space is only as wide as whichever font ends up
+        // rendering it -- which changed under us twice already (Open Sans
+        // took over the text, and the icons moved off the Mono Nerd Font
+        // variant to stop being squeezed into one cell), each time silently
+        // resizing a gap nobody had declared. GtkBox spacing states it in
+        // pixels instead, and it can't be affected by a font change.
+        let content = gtk::Box::new(gtk::Orientation::Horizontal, ICON_GAP_PX);
+
+        let icon = gtk::Label::new(None);
+        icon.style_context().add_class("colonnade-tab");
+        // Left-aligned inside its own allocation, because `render` widens
+        // that allocation to the glyph's real drawn width -- centring would
+        // split the extra space either side and put the gap back in the
+        // wrong place.
+        icon.set_xalign(0.0);
+        content.add(&icon);
 
         let label = gtk::Label::new(None);
         // The button's own "colonnade-tab" class controls its background/
@@ -66,13 +105,18 @@ impl Tab {
         // the label's own natural request to ~1 char forces it to defer
         // to the button's allocated width instead.
         label.set_max_width_chars(1);
-        button.add(&label);
+        // Only the title ellipsizes and defers its width. The icon is one
+        // glyph and must always be drawn in full, so it stays outside that.
+        content.pack_start(&label, true, true, 0);
+        button.add(&content);
 
         let window_id = column.window.id;
         let target_width = column.target_width_px;
+        let height = state.config().tab_height_px();
 
         let tab = Self {
             button,
+            icon,
             label,
             width: Animator::new(target_width as f64),
             window_id,
@@ -80,7 +124,7 @@ impl Tab {
         };
 
         tab.connect_clicks();
-        tab.button.set_size_request(target_width, -1);
+        tab.button.set_size_request(target_width, height);
         tab.render(column);
         tab
     }
@@ -102,9 +146,14 @@ impl Tab {
         let target = column.target_width_px as f64;
         if self.width.target() != target {
             let button = self.button.clone();
+            // Height goes back in on every animation tick, not -1: a size
+            // request is both dimensions at once, so passing -1 here would
+            // hand the height back to GTK mid-animation and let the tab
+            // snap to its natural size the first time it resized.
+            let height = self.state.config().tab_height_px();
             self.width
                 .to(self.button.upcast_ref(), target, move |value| {
-                    button.set_size_request(value.round() as i32, -1);
+                    button.set_size_request(value.round() as i32, height);
                 });
         }
     }
@@ -119,7 +168,9 @@ impl Tab {
             .unwrap_or("window");
         let icon = icon_glyph(column.window.app_id.as_deref(), Some(title));
 
-        self.label.set_text(&format!("{icon} {title}"));
+        self.icon.set_text(icon);
+        self.reserve_icon_width(icon);
+        self.label.set_text(title);
         self.button.set_tooltip_text(Some(title));
 
         let context = self.button.style_context();
@@ -128,6 +179,31 @@ impl Tab {
         } else {
             context.remove_class("focused");
         }
+    }
+
+    /// Widens the icon label to the glyph's *drawn* width when that exceeds
+    /// its advance width.
+    ///
+    /// Nerd Font icons overhang their own advance in the non-Mono variants:
+    /// measured at 9pt, the terminal glyph advances 7px and inks 12px, so it
+    /// spills 5px past the end of its own allocation. GTK sizes a label from
+    /// advance width, so the icon was drawing straight over the start of the
+    /// title -- the box spacing next to it was being consumed by overhang
+    /// before it could separate anything, and with the old single-label
+    /// "icon + space + title" the 3px space lost to that 5px outright and
+    /// the two actually overlapped.
+    ///
+    /// Measured per render rather than hardcoded: the overhang differs per
+    /// glyph (4px to 5px across this table) and scales with font size, so
+    /// any constant here would be wrong for some icon at some size. Asking
+    /// the label's own Pango context is right for every combination.
+    fn reserve_icon_width(&self, icon: &str) {
+        let (ink, logical) = self
+            .icon
+            .create_pango_layout(Some(icon))
+            .pixel_extents();
+        let drawn = ink.x() + ink.width();
+        self.icon.set_size_request(drawn.max(logical.width()), -1);
     }
 
     fn connect_clicks(&self) {

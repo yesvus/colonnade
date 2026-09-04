@@ -59,10 +59,11 @@ pub struct Layout {
     /// an internal CSS provider at GTK_STYLE_PROVIDER_PRIORITY_USER (see
     /// `lib.rs`'s `init`), not left to the external Waybar stylesheet, so
     /// there's exactly one place this is controlled from rather than two
-    /// competing ones. Directly affects vertical tab height too: GTK sizes
-    /// a button from its label's rendered text height once padding/min-
-    /// height are already at zero, so a smaller font is the actual lever
-    /// for a visually thinner bar, not just smaller-looking text.
+    /// competing ones. This is a text-size knob, not a height knob: a
+    /// tab's drawn height is its text height plus the stylesheet's own
+    /// vertical padding and border, and the button takes exactly that
+    /// (see `tab.rs`'s `Align::Center` note) rather than stretching to
+    /// the bar. Change padding, not this, to retune pill height.
     #[serde(default = "default_font_size_pt")]
     font_size_pt: f64,
     /// When true (default), each tab's width tracks its real niri column
@@ -74,6 +75,21 @@ pub struct Layout {
     /// who'd rather not have tab width vary with window size at all.
     #[serde(default = "default_dynamic_tab_width")]
     dynamic_tab_width: bool,
+    /// A tab pill's drawn height in pixels, border included, margins
+    /// excluded. This is the real height knob (font size is not -- see
+    /// `font_size_pt` above): Colonnade zeroes the button's vertical
+    /// padding and margin from its own CSS provider and requests exactly
+    /// this height, so a tab is this many pixels tall and sits centred in
+    /// whatever bar height Waybar ends up with. Even values centre evenly
+    /// in an even bar height: with the usual 26px bar, 22 leaves exactly
+    /// 2px above and below.
+    ///
+    /// Floor: text height plus the stylesheet's border (about 17px at
+    /// 8pt), since GTK will not shrink a widget below what its label
+    /// needs. Ask for less and you get the floor; lower `font_size_pt`
+    /// to go below it.
+    #[serde(default = "default_tab_height_px")]
+    tab_height_px: i32,
 }
 
 impl Default for Layout {
@@ -85,6 +101,7 @@ impl Default for Layout {
             max_overflow_glyphs: default_max_overflow_glyphs(),
             font_size_pt: default_font_size_pt(),
             dynamic_tab_width: default_dynamic_tab_width(),
+            tab_height_px: default_tab_height_px(),
         }
     }
 }
@@ -98,13 +115,19 @@ fn default_min_tab_width_px() -> i32 {
 }
 
 fn default_font_size_pt() -> f64 {
-    // Smaller than the 8pt this started at -- also the real lever on tab
-    // height, see the field doc comment above.
-    7.0
+    // Matches the 9pt the rest of a typical Waybar's text modules use, so
+    // tab text reads as the same bar rather than its own thing.
+    9.0
 }
 
 fn default_dynamic_tab_width() -> bool {
     true
+}
+
+fn default_tab_height_px() -> i32 {
+    // Two pixels of air above and below in the common 26px bar, and even,
+    // so those two gaps come out equal rather than off by one.
+    22
 }
 
 fn default_max_group_width_px() -> i32 {
@@ -225,6 +248,10 @@ impl Config {
 
     pub fn dynamic_tab_width(&self) -> bool {
         self.layout.dynamic_tab_width
+    }
+
+    pub fn tab_height_px(&self) -> i32 {
+        self.layout.tab_height_px
     }
 }
 
