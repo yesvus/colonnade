@@ -108,6 +108,13 @@ Verification:
   snapping to a stale target); open/close a window in the focused
   workspace mid-animation of something else; resize a column
   (`Mod+R`) while its tab is on-screen.
+- Multi-monitor-specific (see `BEHAVIOR.md`): with both `HDMI-A-1` and
+  `eDP-1` active, confirm each instance only ever shows its own output's
+  workspaces, and each blooms its own `is_active` workspace independent of
+  which output currently has keyboard focus — put focus on HDMI-A-1 and
+  confirm eDP-1's bar still has something bloomed, not everything
+  collapsed. Also test with `eDP-1` configured but disconnected (lid
+  closed) — confirm no crash and no cross-output leakage.
 
 ## Phase 2 — Keyboard jump + index badges
 

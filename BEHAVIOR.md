@@ -131,6 +131,43 @@ same config file the existing tab daemon already reads
 (`~/.config/niri-tabs/config.json` today, likely renamed alongside the
 `libniri_taskbar.so` → `libcolonnade.so` rename).
 
+## Multi-monitor
+
+This user's live Waybar config has no `"output"` restriction, so Waybar
+already spawns one full bar window per physical output — one separate
+Colonnade instance per monitor, each needing to know which output it's
+running on.
+
+- **Scope**: each instance shows only workspaces belonging to its own
+  output, never another monitor's. Matches niri's own model — "every
+  monitor has its own separate window strip... windows can never overflow
+  onto an adjacent monitor" — and matches upstream niri-taskbar's default
+  `output::Filter` behavior (kept as-is in Phase 1), which exposes
+  `show_all_outputs` (default `false`) for anyone who wants to override
+  this.
+- **Bloom key: `is_active`, not `is_focused`.** niri tracks exactly one
+  globally `is_focused` workspace system-wide (wherever keyboard input
+  currently is), but every output separately tracks its own `is_active`
+  workspace — the one you'd land on switching to that monitor. Confirmed
+  live on this machine: `eDP-1`'s workspace is `is_active=true,
+  is_focused=false` while HDMI-A-1 has keyboard focus. Using `is_focused`
+  to decide what blooms would leave eDP-1's bar showing nothing bloomed at
+  all any time focus is elsewhere — backwards, since that's exactly when
+  you're not looking at that monitor's bar to notice. Each instance blooms
+  whichever workspace is `is_active` **on its own output**, independent of
+  where keyboard focus currently is.
+- **Known fragility, inherited, not solved here**: reliably identifying
+  "which physical output is this specific bar window on" from inside
+  GTK3/CFFI is documented as unreliable by upstream itself
+  (`lib.rs`'s `build_output_filter`: Gdk3 can't expose the Wayland output
+  name, so it falls back to matching geometry/make/model against niri's
+  own output list). Phase 1 verification must exercise this on this
+  machine's real two-output setup (`HDMI-A-1` + `eDP-1`), including the
+  case where `eDP-1` is configured but not physically connected (a laptop
+  lid-closed state, already seen mid-session: `niri msg -j outputs`
+  reporting `eDP-1: None` for logical geometry) — confirm the filter fails
+  safe rather than crashing or silently showing cross-output content.
+
 ## Overflow (tab strip only; collapsed workspace markers never overflow)
 
 Two independent problems:
