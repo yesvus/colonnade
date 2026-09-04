@@ -27,7 +27,11 @@ pub fn marker_text(workspace: &WorkspaceInfo, windows: &[Window]) -> String {
         .collect()
 }
 
-fn glyph_for(workspace: &WorkspaceInfo, window: &Window) -> char {
+/// Public so overflow ticks (the bloomed workspace's own windows that fall
+/// outside the visible tab slice) can reuse the exact same glyph
+/// vocabulary as collapsed-workspace markers, instead of a numeral -- one
+/// consistent visual language rather than two different indicator styles.
+pub fn glyph_for(workspace: &WorkspaceInfo, window: &Window) -> char {
     if window.is_focused {
         '█'
     } else if workspace.active_window_id == Some(window.id) {

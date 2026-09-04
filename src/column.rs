@@ -17,7 +17,7 @@ use crate::niri::Window;
 /// unboundedly as more columns open, same as niri's own strip; Phase 3's
 /// scrollable/fading strip is what handles the overflow that results,
 /// not shrinking.
-const WIDTH_SCALE_PX: f64 = 200.0;
+const WIDTH_SCALE_PX: f64 = 260.0;
 
 /// Floor so a tiny or momentarily-zero `width_fraction` (e.g. mid-resize)
 /// never produces a degenerate, barely-clickable tab.

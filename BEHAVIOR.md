@@ -134,20 +134,35 @@ same config file the existing tab daemon already reads
 
 ## Overflow (tab strip only; collapsed workspace markers never overflow)
 
-Two independent problems:
+**Mechanism: fixed visible slots, not a scrollable viewport.** A
+`GtkScrolledWindow`-based continuous strip was tried first and abandoned —
+GTK3's content-size propagation through nested containers (`ScrolledWindow`
+inside `Stack` inside `Box`) turned out to be exactly as fragile as GTK3
+has a reputation for: `max-content-width` silently didn't cap anything once
+real window counts got large (confirmed live, 31 windows on one
+workspace — the strip just ran off the edge of the monitor). Matches the
+already-proven Python daemon this replaces instead: `MAX_VISIBLE_TABS`
+(6, same default) tabs are shown at once, sliced and centered on the
+current column; a plain `+N` count appears at whichever end has more,
+not a fade or a scrollbar. Scrolling the wheel over the strip issues
+niri's `focus-column-left`/`-right` directly (see "Click semantics"); the
+next snapshot re-centers the slice on wherever focus lands, the same way
+the Python version's on-scroll handler worked. This sidesteps GTK3's
+fragile size-propagation mechanism entirely rather than fighting it.
+
+Two remaining, still-real cosmetic problems for Phase 3:
 
 - **Per-tab label fade**: cairo mask on the label, applied only when the
   title actually overflows its allocated width — not a fixed-position
   fade regardless of content, which is what the Python version currently
   does. GTK3 has no CSS `mask-image` (see the GTK3-not-GTK4 note above),
   so this is drawn, not styled.
-- **Strip-edge fade + scroll**: cairo-masked edge fade drawn only when the
-  strip is actually overflowing (mirrors niri-workspaces-rs's existing
-  "hide when not relevant" instinct). Scroll position itself is not
-  special-cased — it's one more thing driven through the same shared
-  animation primitive (`src/animate.rs`) that also handles column resize,
-  workspace bloom/collapse, and tab insert/remove, built in Phase 1 rather
-  than treated as a scroll-specific feature.
+- **Slice-transition animation**: when the visible window shifts (scroll,
+  or focus moving past the edge of the current slice), tabs currently pop
+  in/out instantly rather than animating. Still a real gap — `animate.rs`
+  can drive this (fade or slide the outgoing/incoming tabs) without
+  needing a scrollable viewport at all, since the slice itself is just a
+  discrete set of widgets being swapped.
 
 ## Explicitly out of scope for now
 

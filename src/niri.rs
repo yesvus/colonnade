@@ -58,6 +58,19 @@ impl Niri {
         reply::typed!(Handled, reply)
     }
 
+    /// Scroll on the tab strip -- BEHAVIOR.md's click semantics.
+    #[tracing::instrument(level = "TRACE", err)]
+    pub fn focus_column_left(&self) -> Result<(), Error> {
+        let reply = request(Request::Action(Action::FocusColumnLeft {}))?;
+        reply::typed!(Handled, reply)
+    }
+
+    #[tracing::instrument(level = "TRACE", err)]
+    pub fn focus_column_right(&self) -> Result<(), Error> {
+        let reply = request(Request::Action(Action::FocusColumnRight {}))?;
+        reply::typed!(Handled, reply)
+    }
+
     /// Returns the current outputs.
     pub fn outputs(&self) -> Result<HashMap<String, Output>, Error> {
         let reply = request(Request::Outputs)?;
