@@ -284,6 +284,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 
 [[package]]
+name = "colonnade"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-channel",
+ "async-stream",
+ "bitflags",
+ "freedesktop-icons",
+ "futures",
+ "itertools",
+ "linicon",
+ "niri-ipc",
+ "regex",
+ "serde",
+ "thiserror 2.0.17",
+ "tracing",
+ "tracing-subscriber",
+ "waybar-cffi",
+ "zbus",
+]
+
+[[package]]
 name = "concurrent-queue"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -959,28 +981,6 @@ checksum = "12bd9eb4e437f5282ce853cf66837658379cb537b4b6bae687da59246005329a"
 dependencies = [
  "serde",
  "serde_json",
-]
-
-[[package]]
-name = "niri-taskbar"
-version = "0.4.0+niri.25.11"
-dependencies = [
- "anyhow",
- "async-channel",
- "async-stream",
- "bitflags",
- "freedesktop-icons",
- "futures",
- "itertools",
- "linicon",
- "niri-ipc",
- "regex",
- "serde",
- "thiserror 2.0.17",
- "tracing",
- "tracing-subscriber",
- "waybar-cffi",
- "zbus",
 ]
 
 [[package]]

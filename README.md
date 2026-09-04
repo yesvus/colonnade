@@ -17,6 +17,19 @@ Each tab is sized to the fraction of the screen its column actually occupies
 (a third-width column gets a third-width tab), so the bar is a small, honest
 map of your workspace, not just a list of names.
 
+A tab strip alone loses "which workspace am I even in," so Colonnade fuses
+two things that are normally two separate modules (and two separate
+processes) into one bar: every workspace gets a compact, non-interactive
+marker — click it to switch — except the *focused* one, which is the only
+one that blooms into full clickable, column-grouped tabs. Collapsed
+workspaces reuse the glyph vocabulary already proven in
+[niri-workspaces-rs](https://github.com/1jehuang/niri-workspaces-rs) (`█`
+focused window, `▌` active-but-unfocused, `|` other, `¦` background tmux),
+so Colonnade effectively absorbs that project's job rather than running
+alongside it as a second daemon. Because both live in the same CFFI module
+inside waybar's own already-running GTK process, this costs **zero extra
+processes** — not "a lighter second process," none at all.
+
 ## Status
 
 Early-stage fork of [LawnGnome/niri-taskbar][upstream], in active
