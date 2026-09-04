@@ -142,7 +142,14 @@ impl WorkspaceSlot {
 
         let group = gtk::Box::new(gtk::Orientation::Horizontal, 0);
         group.style_context().add_class("workspace-group");
-        stack.add_named(&group, GROUP);
+        // GtkBox is a "windowless" widget in GTK3 -- no GdkWindow of its
+        // own, so it structurally cannot receive pointer/scroll events no
+        // matter what's connected to it. Same reason the marker needs an
+        // EventBox (above); missed it here originally, which is why
+        // mouse-wheel scrolling silently did nothing at all.
+        let group_events = gtk::EventBox::new();
+        group_events.add(&group);
+        stack.add_named(&group_events, GROUP);
 
         let number = gtk::Label::new(None);
         number.style_context().add_class("workspace-number");
@@ -204,7 +211,16 @@ impl WorkspaceSlot {
     fn connect_scroll(&self) {
         let state = self.state.clone();
 
-        self.group.connect_scroll_event(move |_, event| {
+        let Some(group_events) = self
+            .stack
+            .child_by_name(GROUP)
+            .and_then(|w| w.downcast::<gtk::EventBox>().ok())
+        else {
+            tracing::warn!("could not find group EventBox to attach scroll handler to");
+            return;
+        };
+
+        group_events.connect_scroll_event(move |_, event| {
             let going_left = match event.direction() {
                 ScrollDirection::Up | ScrollDirection::Left => Some(true),
                 ScrollDirection::Down | ScrollDirection::Right => Some(false),
