@@ -71,6 +71,31 @@ impl WindowSet {
                     }
                 }
             }
+            // Switching the active workspace (Mod+1..9, scrolling, etc.)
+            // does *not* imply WorkspacesChanged -- that only fires on
+            // structural changes (create/delete/reorder). Without handling
+            // this, `is_active`/`is_focused` on the cached Workspace map
+            // go stale after the first switch, and the bloomed workspace
+            // in Colonnade's UI gets stuck on whatever was active at
+            // startup. (Found by testing on a real second monitor: the bar
+            // stopped following workspace switches entirely.)
+            Event::WorkspaceActivated { id, focused } => {
+                if let Some(Inner::Ready(state)) = &mut self.0 {
+                    state.activate_workspace(id, focused);
+                } else {
+                    tracing::warn!(%self, "unexpected state for WorkspaceActivated event");
+                }
+            }
+            Event::WorkspaceActiveWindowChanged {
+                workspace_id,
+                active_window_id,
+            } => {
+                if let Some(Inner::Ready(state)) = &mut self.0 {
+                    state.set_active_window(workspace_id, active_window_id);
+                } else {
+                    tracing::warn!(%self, "unexpected state for WorkspaceActiveWindowChanged event");
+                }
+            }
             _ => {}
         }
 
@@ -149,6 +174,40 @@ impl Niri {
         // We have to manually patch up the window is_focused values.
         for window in self.windows.values_mut() {
             window.is_focused = Some(window.id) == id;
+        }
+    }
+
+    /// Marks workspace `id` active (and, if `focused`, the single globally
+    /// focused workspace), deactivating whichever other workspace was
+    /// previously active on the *same output* -- niri tracks `is_active`
+    /// per output, not globally (see BEHAVIOR.md's "Multi-monitor"
+    /// section), so this must not touch other outputs' active workspace.
+    fn activate_workspace(&mut self, id: u64, focused: bool) {
+        let output = self.workspaces.get(&id).and_then(|ws| ws.output.clone());
+        for ws in self.workspaces.values_mut() {
+            if ws.id == id {
+                ws.is_active = true;
+                ws.is_focused = focused;
+            } else {
+                if ws.output == output {
+                    ws.is_active = false;
+                }
+                if focused {
+                    ws.is_focused = false;
+                }
+            }
+        }
+    }
+
+    fn set_active_window(&mut self, workspace_id: u64, active_window_id: Option<u64>) {
+        if let Some(ws) = self.workspaces.get_mut(&workspace_id) {
+            ws.active_window_id = active_window_id;
+        } else {
+            tracing::warn!(
+                workspace_id,
+                ?active_window_id,
+                "got active window change for unknown workspace"
+            );
         }
     }
 

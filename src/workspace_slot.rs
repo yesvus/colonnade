@@ -43,6 +43,13 @@ impl WorkspaceSlot {
         let stack = gtk::Stack::new();
         stack.set_transition_type(gtk::StackTransitionType::Crossfade);
         stack.set_transition_duration(150); // matches animate.rs's DURATION_MS
+        // GtkStack defaults to sizing itself for its *largest* child
+        // regardless of which is visible -- without this, a collapsed
+        // marker's slot silently claims the bloomed group's full width
+        // anyway, spreading every other slot out across invisible empty
+        // space instead of packing tight to the left. (Found by looking
+        // at it live: layout looked broken/spread out, not left-aligned.)
+        stack.set_hhomogeneous(false);
         stack.style_context().add_class("workspace-slot");
 
         let marker = gtk::Label::new(None);
