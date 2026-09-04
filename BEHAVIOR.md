@@ -31,6 +31,31 @@ as a second daemon alongside the tab strip — see README for the resource
 argument (zero extra processes, both live in the same CFFI module already
 inside waybar's GTK process).
 
+## Toolkit: GTK3, not a choice
+
+Colonnade is a Waybar CFFI module, which means it's handed a raw
+`GtkWidget*` from Waybar's own already-running process
+(`InitInfo::get_root_widget()`). Waybar 0.15.0 links `libgtk-3.so.0` and
+`libgtk-layer-shell.so.0` (confirmed via `ldd`, and `waybar-cffi`'s own
+docs: *"Waybar still uses Gtk 3 for its UI, so modules are required to also
+use it"*) — not GTK4. A GTK4 widget can't be embedded in a GTK3 container;
+they're separate object systems with separate rendering backends (GTK3:
+direct cairo per-widget draw; GTK4: GSK scene-graph). This isn't a
+preference, it's a consequence of living inside Waybar's process at all,
+which is the entire premise of the zero-extra-process pitch.
+
+The tradeoff this forces: GTK4 has `gtk_snapshot_push_mask()`, a real API
+for exactly the label/edge-fade masking this project needs — GTK3 doesn't,
+so Phase 3 does it manually via cairo `draw`-signal masking instead
+(works, just not a one-liner). Considered and rejected: dropping the
+Waybar-module architecture entirely to own a `wlr-layer-shell` surface
+directly, which would make GTK4 available. Rejected because it trades
+"zero extra RSS, shares Waybar's already-loaded GTK3" for "a second
+GTK4+GSK+driver stack in a new process" — directly against the ~147 MB
+baseline this project exists to beat. That tradeoff is worth taking later,
+for Lumen, where owning the process is already the plan — not now, for a
+module whose whole point is *not* owning a process.
+
 ## Hard invariant: one window per column
 
 Colonnade's tab model — one tab per column, width proportional to that
@@ -73,7 +98,8 @@ this right:
 - Single click → focus window
 - Double click → focus + maximize-to-edges
 - Middle click → close window
-- Right click → close window
+- Right click → reserved, does nothing yet (future: context menu — rename,
+  possibly others; see "Future ideas" below)
 - Scroll (anywhere on the strip) → `focus-column-left` / `focus-column-right`
 
 ## Keyboard: niri owns the keybind, Colonnade only renders the hint
@@ -108,18 +134,20 @@ same config file the existing tab daemon already reads
 
 ## Overflow (tab strip only; collapsed workspace markers never overflow)
 
-Two independent problems, both real, both need drawn (not CSS) solutions
-since GTK3 has no `mask-image`:
+Two independent problems:
 
 - **Per-tab label fade**: cairo mask on the label, applied only when the
   title actually overflows its allocated width — not a fixed-position
   fade regardless of content, which is what the Python version currently
-  does.
+  does. GTK3 has no CSS `mask-image` (see the GTK3-not-GTK4 note above),
+  so this is drawn, not styled.
 - **Strip-edge fade + scroll**: cairo-masked edge fade drawn only when the
   strip is actually overflowing (mirrors niri-workspaces-rs's existing
-  "hide when not relevant" instinct), plus scroll position driven by a GTK
-  frame-clock tick callback for real animated scrolling — not an instant
-  relayout.
+  "hide when not relevant" instinct). Scroll position itself is not
+  special-cased — it's one more thing driven through the same shared
+  animation primitive (`src/animate.rs`) that also handles column resize,
+  workspace bloom/collapse, and tab insert/remove, built in Phase 1 rather
+  than treated as a scroll-specific feature.
 
 ## Explicitly out of scope for now
 
@@ -133,3 +161,19 @@ since GTK3 has no `mask-image`:
 - Drag-to-reorder tabs. Ordering is derived from niri's own column
   positions (see above); reordering tabs independent of that would fight
   the source of truth.
+
+## Future ideas (not scheduled, not designed yet)
+
+- **Right-click context menu**, with rename as its first real entry: a
+  local title override Colonnade displays instead of the real window
+  title (niri windows have no native "rename" concept — the title always
+  comes from the app itself). Right-click is already reserved, doing
+  nothing, specifically so this has somewhere to go.
+- **Drag-to-reorder tabs** — raised again as a feature request, but it
+  directly conflicts with two things already decided above: "Ordering:
+  stable, never by recency" and this section's own existing "explicitly
+  out of scope" entry for the same idea. Needs a real decision (does
+  drag override niri's column order, just for display? does it try to
+  reorder the columns in niri itself via IPC, if that's even possible?)
+  before it goes anywhere near BEHAVIOR.md as settled — not adding it
+  quietly alongside a contradicting rule.

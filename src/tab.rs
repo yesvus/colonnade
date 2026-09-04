@@ -116,7 +116,7 @@ impl Tab {
         let window_id = self.window_id;
 
         self.button.connect_button_release_event(move |_, event| {
-            use waybar_cffi::gtk::gdk::{BUTTON_MIDDLE, BUTTON_SECONDARY, EventType};
+            use waybar_cffi::gtk::gdk::{BUTTON_MIDDLE, EventType};
 
             // Double-click delivers two release events; the second one
             // arrives as `DoubleButtonPress`'s matching release, which Gdk
@@ -129,12 +129,14 @@ impl Tab {
             }
 
             match event.button() {
-                BUTTON_MIDDLE | BUTTON_SECONDARY => {
+                BUTTON_MIDDLE => {
                     if let Err(e) = state.niri().close_window(window_id) {
                         tracing::warn!(%e, id = window_id, "error closing window");
                     }
                     glib::Propagation::Stop
                 }
+                // Right-click deliberately does nothing yet -- reserved
+                // for a future context menu (rename, etc.), not close.
                 _ => glib::Propagation::Proceed,
             }
         });
