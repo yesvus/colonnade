@@ -47,6 +47,16 @@ impl Tab {
         let label = gtk::Label::new(None);
         label.set_xalign(0.0);
         label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+        // Ellipsize alone doesn't stop the label from *requesting* its
+        // full unellipsized text width during layout negotiation -- the
+        // button's set_size_request below only sets a minimum, so a
+        // longer title still wins and the explicit target width gets
+        // silently ignored (found by actually looking at it: every tab
+        // came out the same width, dominated by "Alacritty"'s natural
+        // width, regardless of each column's real proportion). Capping
+        // the label's own natural request to ~1 char forces it to defer
+        // to the button's allocated width instead.
+        label.set_max_width_chars(1);
         button.add(&label);
 
         let window_id = column.window.id;
@@ -166,29 +176,38 @@ impl Tab {
 use waybar_cffi::gtk::glib;
 
 fn icon_glyph(app_id: Option<&str>, title: Option<&str>) -> &'static str {
+    // \u{...} escapes, not literal pasted glyphs: a previous version used
+    // literal characters and every one in the U+E000-U+F8FF (BMP Private
+    // Use Area) range silently came out empty on write, while ones above
+    // U+F0000 (supplementary-plane PUA-A) survived intact -- e.g. the
+    // shared terminal-app icon (U+F489) and the default fallback
+    // (U+F2D0) both went missing, which is why no terminal ever showed an
+    // icon. Escapes make the exact codepoint explicit and can't silently
+    // drop the same way. Codepoints confirmed against the already-working
+    // Python daemon's own icon table.
     const APP_ICONS: &[(&str, &str)] = &[
-        ("firefox", "󰈹"),
-        ("chromium", "󰊯"),
-        ("google-chrome", "󰊯"),
-        ("ghostty", ""),
-        ("foot", ""),
-        ("alacritty", ""),
-        ("kitty", ""),
-        ("dev.zed.zed", "󰨞"),
-        ("code", "󰨞"),
-        ("vscodium", "󰨞"),
-        ("discord", "󰙯"),
-        ("vesktop", "󰙯"),
-        ("telegram", "󰈰"),
-        ("spotify", "󰓇"),
-        ("slack", "󰒱"),
-        ("obsidian", "󰠮"),
-        ("nemo", "󰉋"),
-        ("thunar", "󰉋"),
-        ("nautilus", "󰉋"),
-        ("btop", "󰌓"),
+        ("firefox", "\u{f0239}"),
+        ("chromium", "\u{f02af}"),
+        ("google-chrome", "\u{f02af}"),
+        ("ghostty", "\u{f489}"),
+        ("foot", "\u{f489}"),
+        ("alacritty", "\u{f489}"),
+        ("kitty", "\u{f489}"),
+        ("dev.zed.zed", "\u{f0a1e}"),
+        ("code", "\u{f0a1e}"),
+        ("vscodium", "\u{f0a1e}"),
+        ("discord", "\u{f066f}"),
+        ("vesktop", "\u{f066f}"),
+        ("telegram", "\u{f0230}"),
+        ("spotify", "\u{f04c7}"),
+        ("slack", "\u{f04b1}"),
+        ("obsidian", "\u{f082e}"),
+        ("nemo", "\u{f024b}"),
+        ("thunar", "\u{f024b}"),
+        ("nautilus", "\u{f024b}"),
+        ("btop", "\u{f0313}"),
     ];
-    const DEFAULT_ICON: &str = "";
+    const DEFAULT_ICON: &str = "\u{f2d0}";
 
     let app = app_id.unwrap_or_default().to_lowercase();
     let t = title.unwrap_or_default().to_lowercase();
