@@ -1,8 +1,10 @@
 use std::collections::HashMap;
 
 use futures::Stream;
-use niri_ipc::{Action, Event, Output, Reply, Request, Workspace, socket::Socket};
-pub use state::{Snapshot, Window};
+use niri_ipc::{
+    Action, Event, Output, Reply, Request, Workspace, WorkspaceReferenceArg, socket::Socket,
+};
+pub use state::{Snapshot, Window, WorkspaceInfo};
 pub use window_stream::WindowStream;
 
 use crate::error::Error;
@@ -25,6 +27,34 @@ impl Niri {
     #[tracing::instrument(level = "TRACE", err)]
     pub fn activate_window(&self, id: u64) -> Result<(), Error> {
         let reply = request(Request::Action(Action::FocusWindow { id }))?;
+        reply::typed!(Handled, reply)
+    }
+
+    /// Requests that the given window ID should be closed.
+    #[tracing::instrument(level = "TRACE", err)]
+    pub fn close_window(&self, id: u64) -> Result<(), Error> {
+        let reply = request(Request::Action(Action::CloseWindow { id: Some(id) }))?;
+        reply::typed!(Handled, reply)
+    }
+
+    /// Focuses the given window ID, then maximizes it to the edges of its
+    /// output. Two separate requests, matching what the Python daemon this
+    /// replaces did -- there's no single "focus and maximize" action.
+    #[tracing::instrument(level = "TRACE", err)]
+    pub fn maximize_window(&self, id: u64) -> Result<(), Error> {
+        self.activate_window(id)?;
+        let reply = request(Request::Action(Action::MaximizeWindowToEdges {
+            id: Some(id),
+        }))?;
+        reply::typed!(Handled, reply)
+    }
+
+    /// Switches to the given workspace as a whole (collapsed-marker click).
+    #[tracing::instrument(level = "TRACE", err)]
+    pub fn focus_workspace(&self, id: u64) -> Result<(), Error> {
+        let reply = request(Request::Action(Action::FocusWorkspace {
+            reference: WorkspaceReferenceArg::Id(id),
+        }))?;
         reply::typed!(Handled, reply)
     }
 

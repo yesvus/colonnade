@@ -171,7 +171,8 @@ impl Niri {
         self.windows.insert(window.id, window);
     }
 
-    /// Create a snapshot of the current window state, ordered by workspace index.
+    /// Create a snapshot of the current window and workspace state, ordered
+    /// by workspace index.
     fn snapshot(&self) -> Snapshot {
         struct WindowWorkspace<'a> {
             window: &'a NiriWindow,
@@ -206,17 +207,59 @@ impl Niri {
                 .then_with(|| a.window.id.cmp(&b.window.id))
         });
 
-        wws.into_iter()
+        let windows = wws
+            .into_iter()
             .map(|ww| Window {
                 window: ww.window.clone(),
                 output: ww.workspace.output.clone(),
             })
-            .collect()
+            .collect();
+
+        let mut workspaces: Vec<_> = self
+            .workspaces
+            .values()
+            .map(|ws| WorkspaceInfo {
+                id: ws.id,
+                idx: ws.idx,
+                name: ws.name.clone(),
+                output: ws.output.clone(),
+                is_active: ws.is_active,
+                is_focused: ws.is_focused,
+                active_window_id: ws.active_window_id,
+            })
+            .collect();
+        // Stable order: by output, then by idx within that output -- never
+        // by recency (see BEHAVIOR.md's "Ordering" section).
+        workspaces.sort_by(|a, b| a.output.cmp(&b.output).then_with(|| a.idx.cmp(&b.idx)));
+
+        Snapshot {
+            windows,
+            workspaces,
+        }
     }
 }
 
-/// A snapshot of current toplevel windows, ordered by workspace index.
-pub type Snapshot = Vec<Window>;
+/// A snapshot of current toplevel windows and workspaces, ordered by
+/// workspace index.
+#[derive(Debug, Clone, Default)]
+pub struct Snapshot {
+    pub windows: Vec<Window>,
+    pub workspaces: Vec<WorkspaceInfo>,
+}
+
+/// A workspace, as needed to decide what's bloomed vs collapsed and how to
+/// render collapsed markers. See BEHAVIOR.md's "Multi-monitor" section for
+/// why `is_active` (per-output) drives bloom, not `is_focused` (global).
+#[derive(Debug, Clone)]
+pub struct WorkspaceInfo {
+    pub id: u64,
+    pub idx: u8,
+    pub name: Option<String>,
+    pub output: Option<String>,
+    pub is_active: bool,
+    pub is_focused: bool,
+    pub active_window_id: Option<u64>,
+}
 
 #[derive(Debug, Clone)]
 pub struct Window {

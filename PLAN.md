@@ -30,7 +30,69 @@ checkboxes as phases land; don't let it drift from reality.
       `Mod+Comma`/`Period`, `Mod+BracketLeft`/`Right` unbound (commented),
       validated, hot-reloaded.
 
-**Not started:** anything in `src/`. Upstream's code is still what's there.
+**Phase 1: built, compiles, smoke-tested — not yet visually verified.**
+
+- [x] `src/animate.rs` — tick-callback tweening primitive, `Rc<Cell<State>>`
+      based (not a raw pointer — an earlier draft used one and would have
+      been a real use-after-free risk if a widget were destroyed mid-
+      animation; caught before it shipped). Retargets from the current
+      interpolated value, doesn't spawn a second competing tick callback.
+- [x] `src/workspace_slot.rs` (ended up replacing the planned
+      `workspace_marker.rs` — bloom/collapse and the marker turned out to
+      belong in one widget, not two) — collapsed glyph marker
+      (`src/glyph.rs`, ported from niri-workspaces-rs) and bloomed tab
+      group, swapped via `gtk::Stack`. **Deviation from the original plan:**
+      bloom/collapse uses `Stack`'s own native crossfade+resize transition
+      instead of a hand-rolled `animate.rs` case — GTK already solves
+      "animate between two differently-sized children," so re-deriving it
+      seemed like avoidable risk. `animate.rs` still drives each tab's
+      *width* once bloomed.
+- [x] `src/column.rs` — column grouping + width. Real bug caught while
+      writing it: `width_fraction * output_width` is circular (equals
+      `tile_size` again, i.e. a full-width column would request a
+      literal 1920px tab). Fixed with a `REFERENCE_WIDTH_PX` constant
+      tabs scale relative to each other against — correct *ratios*,
+      tunable absolute size once it's visible and can be judged by eye.
+- [x] `src/tab.rs` (replaces `button.rs`) — animated width, single/double/
+      middle/right-click semantics per BEHAVIOR.md. **Scope cut:**
+      upstream's real per-app icon loading (`icon.rs`'s async Pixbuf
+      cache) isn't wired in yet; uses the same Nerd Font glyph table the
+      Python daemon already used instead. `icon.rs` is kept, unused, for
+      when that lands.
+- [x] `niri-ipc` widened to `26.4.0` (matches this machine's niri 26.04);
+      `Action::FocusWorkspace`/`FocusColumn`/`CloseWindow`/
+      `MaximizeWindowToEdges` and `Workspace`'s `idx`/`is_active`/
+      `active_window_id` fields confirmed present in that version before
+      writing code against them.
+- [x] `cargo build --release` succeeds; `target/release/libcolonnade.so`
+      produced automatically from the crate name, links `libgtk-3.so.0`
+      correctly.
+- [x] Smoke-tested: a scratch Waybar instance (not the live config) loaded
+      the built `.so` against this machine's real niri session for 8s —
+      28 snapshot events processed, zero panics, zero GTK critical
+      warnings, output correctly resolved to `HDMI-A-1`.
+
+**Known gaps, not silently dropped:**
+- Tab insert/remove doesn't animate from/to zero-width yet — a new column
+  appears at full target width immediately, a removed one disappears
+  immediately. The plan called for this; it didn't make it into this
+  pass. Tracked here, not forgotten.
+- **Nothing has been visually verified.** Compiling, not crashing, and
+  processing real snapshots correctly is not the same as the layout,
+  proportions, animation smoothness, or click behavior actually being
+  right — that needs eyes on an actual screen, which the plan's original
+  verification steps (below) still call for and haven't been run.
+- Notifications (urgent-highlighting), real app icons, and app-based CSS
+  matching are upstream features intentionally not wired into the new
+  `Instance` yet (visible as `dead_code` warnings on `cargo build`) —
+  none of this is in `BEHAVIOR.md`'s spec, so cutting it was a scope
+  decision, not an oversight, but it means the current build is visually
+  and functionally sparser than upstream's `niri-taskbar` in those two
+  specific ways.
+- Multi-monitor lid-closed (`eDP-1` configured but disconnected) hasn't
+  been exercised.
+
+**Not started:** Phase 2 onward.
 
 ## Phase 1 — Skeleton + the animation primitive
 
