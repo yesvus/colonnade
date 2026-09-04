@@ -36,9 +36,9 @@ processes** — not "a lighter second process," none at all.
 
 ## Status
 
-Fork of [LawnGnome/niri-taskbar][upstream], now well past the fork point —
-the tab strip, workspace fusion, and click/scroll/keyboard navigation are
-built, running as the author's actual daily-driver bar (both single- and
+Fork of [LawnGnome/niri-taskbar][upstream], now well past the fork point.
+The tab strip, workspace fusion, and click/scroll/keyboard navigation are
+built, running as my actual daily-driver bar (both single- and
 multi-monitor), and benchmarked against the Python daemon setup it
 replaces. Some polish is still ahead; see the checklist.
 

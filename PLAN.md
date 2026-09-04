@@ -4,7 +4,7 @@
 get there, in what sequence, verified at each step). Update this file's
 checkboxes as phases land; don't let it drift from reality.
 
-**v0.1.0**: running as the author's actual daily-driver bar, single- and
+**v0.1.0**: running as my actual daily-driver bar, single- and
 multi-monitor, benchmarked at 73 MB combined RSS vs. the 147 MB baseline
 (see `bench/README.md`). Everything below "Phase 1" that's marked `[x]`
 has been through real usage, not just a smoke test -- several rounds of
