@@ -4,25 +4,6 @@
 
 use crate::niri::Window;
 
-/// Each column's width is `width_fraction * WIDTH_SCALE_PX`, computed
-/// independently of every other column -- **not** normalized against
-/// sibling count. Niri's own model is explicit about this: "opening a new
-/// window never causes existing windows to resize." An earlier version of
-/// this normalized against the group's total, which shrank every existing
-/// tab whenever a new one opened -- exactly the behavior niri itself
-/// refuses to do. This scale constant is what "proportional" is measured
-/// against instead of the literal output width (which would request a
-/// full-width column's tab at a literal 1920px) -- tunable by eye, not a
-/// precise measurement. The group's total width is allowed to grow
-/// unboundedly as more columns open, same as niri's own strip; Phase 3's
-/// scrollable/fading strip is what handles the overflow that results,
-/// not shrinking.
-const WIDTH_SCALE_PX: f64 = 260.0;
-
-/// Floor so a tiny or momentarily-zero `width_fraction` (e.g. mid-resize)
-/// never produces a degenerate, barely-clickable tab.
-const MIN_TAB_WIDTH_PX: i32 = 40;
-
 /// One niri column within the bloomed workspace. Exactly one window per
 /// column is a hard invariant (see BEHAVIOR.md) -- niri's own config has
 /// the mechanisms that would violate it (tabbed columns, consume-into-
@@ -37,15 +18,34 @@ pub struct Column<'a> {
     /// width (e.g. a third-width column is ~0.333). `0.0` if the output
     /// width isn't known yet.
     pub width_fraction: f64,
-    /// This column's tab width in pixels -- `width_fraction * WIDTH_SCALE_PX`,
-    /// independent of any other column. See `WIDTH_SCALE_PX` for why.
+    /// This column's tab width in pixels -- `width_fraction *
+    /// width_scale_px` (a `Config::tab_width_scale_px()` value, see
+    /// `group`'s doc comment), independent of any other column.
     pub target_width_px: i32,
 }
 
 /// Groups `windows` (expected to already be scoped to a single, bloomed
 /// workspace) by column, sorted left to right, using `output_width` to
 /// compute each column's own width -- independently of the others.
-pub fn group<'a>(windows: &'a [Window], output_width: f64) -> Vec<Column<'a>> {
+///
+/// Each column's width is `width_fraction * width_scale_px`, computed
+/// independently of every other column -- **not** normalized against
+/// sibling count. Niri's own model is explicit about this: "opening a new
+/// window never causes existing windows to resize." An earlier version of
+/// this normalized against the group's total, which shrank every existing
+/// tab whenever a new one opened -- exactly the behavior niri itself
+/// refuses to do. `width_scale_px` is what "proportional" is measured
+/// against instead of the literal output width (which would request a
+/// full-width column's tab at a literal 1920px). The group's total width
+/// is allowed to grow unboundedly as more columns open, same as niri's
+/// own strip; the caller (`workspace_slot.rs`) is what bounds how many of
+/// them are actually shown.
+pub fn group<'a>(
+    windows: &'a [Window],
+    output_width: f64,
+    width_scale_px: f64,
+    min_tab_width_px: i32,
+) -> Vec<Column<'a>> {
     let mut columns: Vec<Column<'a>> = windows
         .iter()
         .filter_map(|window| {
@@ -56,7 +56,7 @@ pub fn group<'a>(windows: &'a [Window], output_width: f64) -> Vec<Column<'a>> {
                 0.0
             };
             let target_width_px =
-                ((width_fraction * WIDTH_SCALE_PX).round() as i32).max(MIN_TAB_WIDTH_PX);
+                ((width_fraction * width_scale_px).round() as i32).max(min_tab_width_px);
             Some(Column {
                 index,
                 window,

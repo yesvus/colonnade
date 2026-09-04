@@ -12,17 +12,15 @@
 
 use crate::niri::{Window, WorkspaceInfo};
 
-/// Caps a collapsed marker's own width -- without this, a workspace with
+/// The marker text for one collapsed workspace: one glyph per window,
+/// left to right in column order, capped at `max_glyphs`
+/// (`Config::max_overflow_glyphs()`) -- without a cap, a workspace with
 /// enough windows (31, in one real case found while testing) renders a
 /// marker exactly as wide as the bloomed tab group was before slicing was
-/// added, defeating the point. `…` replaces the last glyph when truncated
-/// rather than just hard-cutting, so there's a visible hint that the count
-/// isn't the whole story.
-const MAX_MARKER_GLYPHS: usize = 10;
-
-/// The marker text for one collapsed workspace: one glyph per window,
-/// left to right in column order, capped at `MAX_MARKER_GLYPHS`.
-pub fn marker_text(workspace: &WorkspaceInfo, windows: &[Window]) -> String {
+/// added, defeating the point. `…` (via `capped`) replaces the last glyph
+/// when truncated rather than just hard-cutting, so there's a visible
+/// hint that the count isn't the whole story.
+pub fn marker_text(workspace: &WorkspaceInfo, windows: &[Window], max_glyphs: usize) -> String {
     let mut in_workspace: Vec<&Window> = windows
         .iter()
         .filter(|w| w.workspace_id == Some(workspace.id))
@@ -31,7 +29,7 @@ pub fn marker_text(workspace: &WorkspaceInfo, windows: &[Window]) -> String {
 
     capped(
         in_workspace.into_iter().map(|w| glyph_for(workspace, w)),
-        MAX_MARKER_GLYPHS,
+        max_glyphs,
     )
 }
 

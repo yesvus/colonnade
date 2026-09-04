@@ -132,6 +132,32 @@ same config file the existing tab daemon already reads
 (`~/.config/niri-tabs/config.json` today, likely renamed alongside the
 `libniri_taskbar.so` → `libcolonnade.so` rename).
 
+## Layout is config-tunable, not hardcoded
+
+Tab width, the visible-group width budget, and the overflow-glyph cap
+started as Rust constants that needed a rebuild to adjust — which got old
+fast during the amount of by-eye tuning this bar needed in practice.
+They're `Config::layout` fields now (`src/config.rs`), read at render time
+via `self.state.config()`, under a `layout` key in the Waybar module
+config:
+
+```jsonc
+"cffi/colonnade": {
+    "module_path": "...",
+    "layout": {
+        "tab_width_scale_px": 260,
+        "min_tab_width_px": 40,
+        "max_group_width_px": 620,
+        "max_overflow_glyphs": 10
+    }
+}
+```
+
+All four have defaults matching what's already tuned; only the ones a
+user wants to override need to appear at all. Any further constant that
+turns out to need by-eye tuning again should go here too, not back into a
+hardcoded const.
+
 ## Overflow (tab strip only; collapsed workspace markers never overflow)
 
 **Mechanism: fixed visible slots, not a scrollable viewport.** A

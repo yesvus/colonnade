@@ -8,23 +8,30 @@
 //! `animate.rs` is still what drives each individual tab's width once
 //! bloomed (see `tab.rs`).
 //!
-//! Overflow: a fixed number of visible tab slots, sliced and centered on
-//! the current column, matching the already-proven Python daemon this
-//! replaces -- not a GtkScrolledWindow letting GTK auto-size/scroll
-//! arbitrary content. That was tried first and abandoned: GTK3's
-//! content-size propagation through nested containers (ScrolledWindow
-//! inside Stack inside Box) is a known-fragile mechanism, and it showed
-//! exactly that fragility here (the width cap silently didn't apply,
-//! confirmed by screenshot with 31 real windows on one workspace). Fixed
-//! slots avoids that whole mechanism rather than fighting it.
+//! Overflow: a real pixel-width budget (`Config::max_group_width_px()`),
+//! not a fixed tab count and not a GtkScrolledWindow letting GTK auto-
+//! size/scroll arbitrary content. The GtkScrolledWindow approach was
+//! tried first and abandoned: GTK3's content-size propagation through
+//! nested containers (ScrolledWindow inside Stack inside Box) is a
+//! known-fragile mechanism, and it showed exactly that fragility here
+//! (the width cap silently didn't apply, confirmed by screenshot with 31
+//! real windows on one workspace). A fixed *count* was tried next and
+//! also replaced: it could still let a handful of wide tabs blow past
+//! the screen. The current approach (`expand_right` below) greedily
+//! includes columns by their real, unshrunk width until the budget is
+//! spent, anchored on the current column and shifted symmetrically, with
+//! zero lookahead, only once focus reaches the visible slice's own edge
+//! tab in either direction.
 
 use std::{collections::BTreeMap, fmt::Debug};
 
 use waybar_cffi::gtk::{
     self,
-    gdk::ScrollDirection,
+    gdk::{self, ScrollDirection},
     glib::{self, Cast},
-    prelude::{BoxExt, ContainerExt, LabelExt, StackExt, StyleContextExt, WidgetExt},
+    prelude::{
+        BoxExt, ContainerExt, LabelExt, StackExt, StyleContextExt, WidgetExt, WidgetExtManual,
+    },
 };
 
 use crate::{
@@ -37,15 +44,6 @@ use crate::{
 
 const MARKER: &str = "marker";
 const GROUP: &str = "group";
-
-/// Real pixel budget for the visible tab group -- not a fixed tab
-/// *count*. A fixed count (the original approach here) still let the
-/// group blow past the screen whenever tabs happened to be wide (e.g.
-/// several full-width columns in a row): 6 tabs at ~260px each is
-/// 1560px, easily pushing modules-right off the monitor. This bounds the
-/// actual on-screen width instead, so however many tabs fit at their
-/// real (unshrunk) width is how many show.
-const MAX_GROUP_WIDTH_PX: i32 = 520;
 
 /// Greedily includes columns rightward from `start` while the running
 /// total stays within `budget_px`. Always includes at least the starting
@@ -64,11 +62,6 @@ fn expand_right(columns: &[Column<'_>], start: usize, budget_px: i32) -> usize {
     }
     end
 }
-
-/// Caps each overflow-tick string the same way `glyph::marker_text` caps a
-/// collapsed marker -- see that constant's doc comment for why this needs
-/// to exist at all.
-const MAX_OVERFLOW_GLYPHS: usize = 6;
 
 /// Workspace idx, or its custom name if it has one. Shown always now, both
 /// bloomed and collapsed -- there was previously no way to tell which
@@ -148,6 +141,14 @@ impl WorkspaceSlot {
         // EventBox (above); missed it here originally, which is why
         // mouse-wheel scrolling silently did nothing at all.
         let group_events = gtk::EventBox::new();
+        // EventBox alone wasn't enough either: GTK3's default widget event
+        // mask doesn't include scroll (button press/release get connected
+        // automatically when you hook connect_button_*_event, but scroll
+        // apparently doesn't get the same treatment) -- has to be
+        // requested explicitly, or the EventBox's own GdkWindow never asks
+        // the compositor for scroll events in the first place, and no
+        // scroll signal ever fires no matter what's connected to it.
+        group_events.add_events(gdk::EventMask::SCROLL_MASK | gdk::EventMask::SMOOTH_SCROLL_MASK);
         group_events.add(&group);
         stack.add_named(&group_events, GROUP);
 
@@ -248,12 +249,22 @@ impl WorkspaceSlot {
     }
 
     /// Renders this workspace as bloomed: a workspace-number label,
-    /// followed by however many tabs fit `MAX_GROUP_WIDTH_PX` at their
-    /// real (unshrunk) width, anchored per `Self::anchor`'s doc comment.
+    /// followed by however many tabs fit `Config::max_group_width_px()`
+    /// at their real (unshrunk) width, anchored per `Self::anchor`'s doc
+    /// comment.
     pub fn set_bloomed(&mut self, workspace: &WorkspaceInfo, windows: &[Window], output_width: f64) {
         self.number.set_text(&workspace_label(workspace));
 
-        let columns = column::group(windows, output_width);
+        let config = self.state.config();
+        let max_group_width_px = config.max_group_width_px();
+        let max_overflow_glyphs = config.max_overflow_glyphs();
+
+        let columns = column::group(
+            windows,
+            output_width,
+            config.tab_width_scale_px(),
+            config.min_tab_width_px(),
+        );
         let total = columns.len();
 
         if total == 0 {
@@ -278,26 +289,26 @@ impl WorkspaceSlot {
             .anchor
             .and_then(|id| columns.iter().position(|c| c.window.id == id))
             .unwrap_or(current_idx);
+        let mut end = expand_right(&columns, start, max_group_width_px);
 
-        // Moving left (or the anchored window closed) should feel
-        // immediate -- pull the window to include wherever focus actually
-        // is, no lookahead delay on this side.
-        if current_idx < start {
-            start = current_idx;
+        // Symmetric, zero-lookahead: shift exactly when focus reaches the
+        // visible slice's own edge tab, in either direction -- not one
+        // before it (too eager: with 5 visible tabs this was shifting at
+        // the 4th, not the 5th) and not one past it (too late: the
+        // previous left-edge behavior only reacted once focus had already
+        // moved one step *beyond* the first visible tab, i.e. off the end
+        // of the current slice, rather than reacting on the edge tab
+        // itself the way the right side now does). Both loops handle a
+        // single-column shift still leaving current at the edge (e.g. the
+        // next column is unusually wide), and a current that jumped more
+        // than one column away from the old anchor in a single update.
+        while current_idx <= start && start > 0 {
+            start -= 1;
+            end = expand_right(&columns, start, max_group_width_px);
         }
-
-        let mut end = expand_right(&columns, start, MAX_GROUP_WIDTH_PX);
-
-        // Only shift right once focus reaches the *second-to-last*
-        // visible tab, not sooner -- a fixed centering formula (the
-        // original approach here) always placed the current tab at the
-        // same offset from the start of the slice regardless of how much
-        // room was left, so it shifted noticeably earlier than it needed
-        // to. Looping handles a single-column shift still leaving current
-        // at the edge (e.g. the next column is unusually wide).
-        while current_idx + 2 >= end && end < total {
+        while current_idx + 1 >= end && end < total {
             start += 1;
-            end = expand_right(&columns, start, MAX_GROUP_WIDTH_PX);
+            end = expand_right(&columns, start, max_group_width_px);
         }
 
         self.anchor = Some(columns[start].window.id);
@@ -311,13 +322,13 @@ impl WorkspaceSlot {
         // just recreate that unbounded-width problem one level up.
         let left_text = glyph::capped(
             columns[..start].iter().map(|c| glyph::glyph_for(workspace, c.window)),
-            MAX_OVERFLOW_GLYPHS,
+            max_overflow_glyphs,
         );
         let right_text = glyph::capped(
             columns[start + visible.len()..]
                 .iter()
                 .map(|c| glyph::glyph_for(workspace, c.window)),
-            MAX_OVERFLOW_GLYPHS,
+            max_overflow_glyphs,
         );
         self.overflow_left.set_text(&left_text);
         self.overflow_right.set_text(&right_text);
@@ -361,7 +372,7 @@ impl WorkspaceSlot {
     /// output, not pre-filtered -- `glyph::marker_text` filters by
     /// workspace itself.
     pub fn set_collapsed(&mut self, workspace: &WorkspaceInfo, windows: &[Window]) {
-        let glyphs = glyph::marker_text(workspace, windows);
+        let glyphs = glyph::marker_text(workspace, windows, self.state.config().max_overflow_glyphs());
         // An empty, focused (bloom-eligible) workspace is handled by
         // set_bloomed's caller instead; a collapsed workspace with no
         // windows is never shown at all -- the caller doesn't create a
