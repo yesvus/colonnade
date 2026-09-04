@@ -133,18 +133,20 @@ same config file the existing tab daemon already reads
 
 ## Overflow (tab strip only; collapsed workspace markers never overflow)
 
-Two independent problems, both real, both need drawn (not CSS) solutions
-since GTK3 has no `mask-image`:
+Two independent problems:
 
 - **Per-tab label fade**: cairo mask on the label, applied only when the
   title actually overflows its allocated width — not a fixed-position
   fade regardless of content, which is what the Python version currently
-  does.
+  does. GTK3 has no CSS `mask-image` (see the GTK3-not-GTK4 note above),
+  so this is drawn, not styled.
 - **Strip-edge fade + scroll**: cairo-masked edge fade drawn only when the
   strip is actually overflowing (mirrors niri-workspaces-rs's existing
-  "hide when not relevant" instinct), plus scroll position driven by a GTK
-  frame-clock tick callback for real animated scrolling — not an instant
-  relayout.
+  "hide when not relevant" instinct). Scroll position itself is not
+  special-cased — it's one more thing driven through the same shared
+  animation primitive (`src/animate.rs`) that also handles column resize,
+  workspace bloom/collapse, and tab insert/remove, built in Phase 1 rather
+  than treated as a scroll-specific feature.
 
 ## Explicitly out of scope for now
 
