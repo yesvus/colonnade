@@ -28,7 +28,7 @@ use std::{collections::BTreeMap, fmt::Debug};
 use waybar_cffi::gtk::{
     self,
     gdk::{self, ScrollDirection},
-    glib::{self, Cast},
+    glib,
     prelude::{
         BoxExt, ContainerExt, LabelExt, StackExt, StyleContextExt, WidgetExt, WidgetExtManual,
     },
@@ -76,13 +76,25 @@ fn workspace_label(workspace: &WorkspaceInfo) -> String {
 }
 
 pub struct WorkspaceSlot {
+    /// The slot itself: the workspace number, then the stack that swaps
+    /// between collapsed glyphs and bloomed tabs.
+    root: gtk::Box,
     stack: gtk::Stack,
     marker: gtk::Label,
     group: gtk::Box,
-    /// Workspace idx (or name), shown before the first tab -- the bloomed
-    /// view otherwise has no cue at all for which workspace you're
-    /// looking at. Matches niri-workspaces-rs's original convention of
-    /// prefixing the focused workspace's own glyph row the same way.
+    /// Workspace idx (or name), shown in both states -- there is otherwise
+    /// no cue at all for which workspace you're looking at. Matches
+    /// niri-workspaces-rs's original convention of prefixing the focused
+    /// workspace's own glyph row the same way.
+    ///
+    /// Deliberately a sibling of `stack`, not a child of either stack
+    /// page. It used to be both: a label inside `group` when bloomed, and
+    /// a prefix baked into `marker`'s own text when collapsed. Two
+    /// widgets meant two sets of horizontal padding for the same visible
+    /// number, so switching workspaces made the number jump sideways by
+    /// the difference (measured 2px: the group label's 4px inset versus
+    /// the marker's 6px). One widget outside the stack can't drift from
+    /// itself, whatever either page's padding later becomes.
     number: gtk::Label,
     /// Non-interactive glyph ticks (same vocabulary as collapsed-workspace
     /// markers -- see `glyph.rs`), shown at either end when tabs are
@@ -125,7 +137,6 @@ impl WorkspaceSlot {
         // space instead of packing tight to the left. (Found by looking
         // at it live: layout looked broken/spread out, not left-aligned.)
         stack.set_hhomogeneous(false);
-        stack.style_context().add_class("workspace-slot");
 
         let marker = gtk::Label::new(None);
         marker.style_context().add_class("workspace-marker");
@@ -154,17 +165,44 @@ impl WorkspaceSlot {
 
         let number = gtk::Label::new(None);
         number.style_context().add_class("workspace-number");
-        group.add(&number);
+        // Same EventBox reasoning as the marker and the group: a bare
+        // GtkLabel has no GdkWindow, so it can't take clicks or scrolls
+        // itself. The number needs both, because it used to inherit them
+        // from whichever page it lived in (clicking a collapsed marker's
+        // number focused that workspace; scrolling over the bloomed
+        // number scrolled columns, since it sat inside the group's own
+        // EventBox), and pulling it out of the stack would silently drop
+        // both.
+        let number_events = gtk::EventBox::new();
+        number_events.add_events(gdk::EventMask::SCROLL_MASK | gdk::EventMask::SMOOTH_SCROLL_MASK);
+        number_events.add(&number);
 
+        let root = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        root.style_context().add_class("workspace-slot");
+        root.add(&number_events);
+        root.add(&stack);
+
+        // An empty GtkLabel is still an allocated widget: with no text it
+        // kept its stylesheet padding, so with nothing overflowing, the
+        // left tick silently sat between the workspace number and the
+        // first tab as several pixels of nothing, making that gap wider
+        // than the equivalent gap in a collapsed marker (which is one
+        // literal space character). Hidden when empty instead, so the
+        // spacing is only ever the number's own padding. no_show_all
+        // because `group.show_all()` at the end of every render would
+        // otherwise put them straight back.
         let overflow_left = gtk::Label::new(None);
         overflow_left.style_context().add_class("overflow-left");
+        overflow_left.set_no_show_all(true);
         group.add(&overflow_left);
 
         let overflow_right = gtk::Label::new(None);
         overflow_right.style_context().add_class("overflow-right");
+        overflow_right.set_no_show_all(true);
         group.add(&overflow_right);
 
         let slot = Self {
+            root,
             stack,
             marker,
             group,
@@ -177,31 +215,56 @@ impl WorkspaceSlot {
             workspace_id,
         };
 
-        slot.connect_marker_click();
-        slot.connect_scroll();
+        slot.connect_focus_click(&marker_box);
+        slot.connect_focus_click(&number_events);
+        slot.connect_scroll(&group_events);
+        slot.connect_scroll(&number_events);
         slot
     }
 
-    pub fn widget(&self) -> &gtk::Stack {
-        &self.stack
+    pub fn widget(&self) -> &gtk::Box {
+        &self.root
     }
 
-    fn connect_marker_click(&self) {
+    /// Bright number for the bloomed workspace, dim for collapsed ones.
+    /// This used to come for free from which widget the number lived in
+    /// (`.workspace-number` when bloomed, the dim `.workspace-marker`'s
+    /// own text when collapsed). Now that it's one widget in both states,
+    /// the distinction has to be said out loud -- same "focused" class
+    /// `tab.rs` uses, so the stylesheet keeps one vocabulary for "this is
+    /// the active one".
+    fn set_number_focused(&self, focused: bool) {
+        let context = self.number.style_context();
+        if focused {
+            context.add_class("focused");
+        } else {
+            context.remove_class("focused");
+        }
+    }
+
+    /// Sets both overflow ticks, showing each only when it actually has
+    /// glyphs -- see the `no_show_all` note in `new`.
+    fn set_overflow_text(&self, left: &str, right: &str) {
+        for (label, text) in [(&self.overflow_left, left), (&self.overflow_right, right)] {
+            label.set_text(text);
+            label.set_visible(!text.is_empty());
+        }
+    }
+
+    /// Click-to-focus-this-workspace, for any part of the slot that isn't
+    /// a tab: the collapsed marker, and the workspace number in either
+    /// state. Takes the EventBox rather than looking one up by stack page
+    /// name, since the number's box isn't in the stack at all.
+    fn connect_focus_click(&self, events: &gtk::EventBox) {
         let state = self.state.clone();
         let workspace_id = self.workspace_id;
 
-        if let Some(marker_box) = self
-            .stack
-            .child_by_name(MARKER)
-            .and_then(|w| w.downcast::<gtk::EventBox>().ok())
-        {
-            marker_box.connect_button_release_event(move |_, _| {
-                if let Err(e) = state.niri().focus_workspace(workspace_id) {
-                    tracing::warn!(%e, id = workspace_id, "error switching workspace");
-                }
-                glib::Propagation::Stop
-            });
-        }
+        events.connect_button_release_event(move |_, _| {
+            if let Err(e) = state.niri().focus_workspace(workspace_id) {
+                tracing::warn!(%e, id = workspace_id, "error switching workspace");
+            }
+            glib::Propagation::Stop
+        });
     }
 
     /// Scroll anywhere on the strip -- BEHAVIOR.md: `focus-column-left` /
@@ -209,19 +272,10 @@ impl WorkspaceSlot {
     /// update: the next snapshot re-centers the visible slice on whatever
     /// column becomes current, the same way the Python daemon's on-scroll
     /// handler worked.
-    fn connect_scroll(&self) {
+    fn connect_scroll(&self, events: &gtk::EventBox) {
         let state = self.state.clone();
 
-        let Some(group_events) = self
-            .stack
-            .child_by_name(GROUP)
-            .and_then(|w| w.downcast::<gtk::EventBox>().ok())
-        else {
-            tracing::warn!("could not find group EventBox to attach scroll handler to");
-            return;
-        };
-
-        group_events.connect_scroll_event(move |_, event| {
+        events.connect_scroll_event(move |_, event| {
             let going_left = match event.direction() {
                 ScrollDirection::Up | ScrollDirection::Left => Some(true),
                 ScrollDirection::Down | ScrollDirection::Right => Some(false),
@@ -254,6 +308,7 @@ impl WorkspaceSlot {
     /// comment.
     pub fn set_bloomed(&mut self, workspace: &WorkspaceInfo, windows: &[Window], output_width: f64) {
         self.number.set_text(&workspace_label(workspace));
+        self.set_number_focused(true);
 
         let config = self.state.config();
         let max_group_width_px = config.max_group_width_px();
@@ -269,8 +324,7 @@ impl WorkspaceSlot {
         let total = columns.len();
 
         if total == 0 {
-            self.overflow_left.set_text("");
-            self.overflow_right.set_text("");
+            self.set_overflow_text("", "");
             for (_, tab) in self.tabs.iter() {
                 self.group.remove(tab.widget());
             }
@@ -331,8 +385,7 @@ impl WorkspaceSlot {
                 .map(|c| glyph::glyph_for(workspace, c.window)),
             max_overflow_glyphs,
         );
-        self.overflow_left.set_text(&left_text);
-        self.overflow_right.set_text(&right_text);
+        self.set_overflow_text(&left_text, &right_text);
 
         let mut seen = std::collections::BTreeSet::new();
 
@@ -380,8 +433,13 @@ impl WorkspaceSlot {
         // slot for it. Still guard here rather than show a blank marker if
         // that assumption is ever violated.
         let glyphs = if glyphs.is_empty() { "·" } else { &glyphs };
-        self.marker
-            .set_text(&format!("{} {glyphs}", workspace_label(workspace)));
+        // Glyphs only. The workspace number is `self.number`, a sibling
+        // of the stack, in this state exactly as in the bloomed one --
+        // see that field's own doc comment for why it isn't baked into
+        // this string any more.
+        self.number.set_text(&workspace_label(workspace));
+        self.set_number_focused(false);
+        self.marker.set_text(glyphs);
         self.stack.set_visible_child_name(MARKER);
     }
 }
