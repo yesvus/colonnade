@@ -4,18 +4,18 @@
 
 use crate::niri::Window;
 
-/// A tab's width is `width_fraction * REFERENCE_WIDTH_PX`, not
-/// `width_fraction * output_width_px` -- the latter would literally
-/// request a tab as wide as the real window (e.g. 1920px for a
-/// full-width column), since `width_fraction` is already `tile_size /
-/// output_width`. "Proportional" means proportional *among tabs in the
-/// bar*, not a 1:1 pixel copy of the real layout. This constant stands in
-/// for "how much width the tab-group would have if given generous room" --
-/// tabs scale relative to each other correctly regardless of its exact
-/// value; Phase 3's scrollable strip is what handles the case where the
-/// sum exceeds the bar's actual available space. Treat as tunable once
-/// this is visible and can be judged by eye, not as a precise measurement.
-const REFERENCE_WIDTH_PX: f64 = 600.0;
+/// The tab group's total width budget, in pixels -- each column's
+/// `width_fraction` is normalized *against the other columns currently in
+/// this workspace*, then distributed across this budget, rather than each
+/// tab claiming a flat width independent of how many others exist. That
+/// earlier flat-per-tab approach grew the group unboundedly as more
+/// windows opened, which is wrong for a bar (found by actually looking at
+/// it: tabs were too wide). Normalizing keeps the group's total size
+/// roughly consistent regardless of window count -- tabs shrink as more
+/// columns exist, like flex distribution. Tunable by eye; Phase 3's
+/// scrollable strip is what handles the case where even MIN_TAB_WIDTH_PX
+/// floors push the total past the bar's actual available space.
+const TOTAL_GROUP_BUDGET_PX: f64 = 420.0;
 
 /// Floor so a tiny or momentarily-zero `width_fraction` (e.g. mid-resize)
 /// never produces a degenerate, barely-clickable tab.
@@ -32,45 +32,68 @@ pub struct Column<'a> {
     pub index: usize,
     pub window: &'a Window,
     /// This column's tile width as a fraction of the output's logical
-    /// width (e.g. a third-width column is ~0.333). `0.0` if the output
-    /// width isn't known yet.
+    /// width (e.g. a third-width column is ~0.333). Kept for reference/
+    /// debugging; `target_width_px` (normalized against the other columns
+    /// present) is what actually drives the tab's size.
     pub width_fraction: f64,
-}
-
-impl Column<'_> {
-    /// This column's tab width in pixels -- see `REFERENCE_WIDTH_PX` for
-    /// why this isn't just `width_fraction * output_width`.
-    pub fn target_width_px(&self) -> i32 {
-        ((self.width_fraction * REFERENCE_WIDTH_PX).round() as i32).max(MIN_TAB_WIDTH_PX)
-    }
+    /// This column's tab width in pixels, already normalized against its
+    /// siblings and distributed across `TOTAL_GROUP_BUDGET_PX`.
+    pub target_width_px: i32,
 }
 
 /// Groups `windows` (expected to already be scoped to a single, bloomed
 /// workspace) by column, sorted left to right, using `output_width` to
-/// compute each column's proportional width.
+/// compute each column's proportional width relative to the others.
 pub fn group<'a>(windows: &'a [Window], output_width: f64) -> Vec<Column<'a>> {
-    let mut columns: Vec<Column<'a>> = windows
+    struct Raw<'a> {
+        index: usize,
+        window: &'a Window,
+        fraction: f64,
+    }
+
+    let mut raw: Vec<Raw<'a>> = windows
         .iter()
         .filter_map(|window| {
             let (index, _tile_index) = window.layout.pos_in_scrolling_layout?;
-            let width_fraction = if output_width > 0.0 {
+            let fraction = if output_width > 0.0 {
                 window.layout.tile_size.0 / output_width
             } else {
                 0.0
             };
-            Some(Column {
+            Some(Raw {
                 index,
                 window,
-                width_fraction,
+                fraction,
             })
         })
         .collect();
 
-    columns.sort_by_key(|c| c.index);
+    raw.sort_by_key(|c| c.index);
     // Defensive only (see doc comment above): if the one-window-per-column
     // invariant is ever violated, keep the first window in each column
     // rather than rendering two tabs claiming the same index.
-    columns.dedup_by_key(|c| c.index);
+    raw.dedup_by_key(|c| c.index);
 
-    columns
+    let total_fraction: f64 = raw.iter().map(|c| c.fraction).sum();
+    let count = raw.len().max(1) as f64;
+
+    raw.into_iter()
+        .map(|c| {
+            // Split evenly if fractions are all zero (output width not yet
+            // known) rather than collapsing every tab to MIN_TAB_WIDTH_PX.
+            let normalized = if total_fraction > 0.0 {
+                c.fraction / total_fraction
+            } else {
+                1.0 / count
+            };
+            let target_width_px =
+                ((normalized * TOTAL_GROUP_BUDGET_PX).round() as i32).max(MIN_TAB_WIDTH_PX);
+            Column {
+                index: c.index,
+                window: c.window,
+                width_fraction: c.fraction,
+                target_width_px,
+            }
+        })
+        .collect()
 }

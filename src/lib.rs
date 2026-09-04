@@ -261,7 +261,7 @@ impl Instance {
             });
 
             if is_bloomed {
-                slot.set_bloomed(&ws_windows, output_width);
+                slot.set_bloomed(ws, &ws_windows, output_width);
             } else {
                 slot.set_collapsed(ws, &snapshot.windows);
             }

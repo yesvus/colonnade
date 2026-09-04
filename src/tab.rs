@@ -50,7 +50,7 @@ impl Tab {
         button.add(&label);
 
         let window_id = column.window.id;
-        let target_width = column.target_width_px();
+        let target_width = column.target_width_px;
 
         let tab = Self {
             button,
@@ -80,7 +80,7 @@ impl Tab {
     pub fn update(&self, column: &Column<'_>) {
         self.render(column);
 
-        let target = column.target_width_px() as f64;
+        let target = column.target_width_px as f64;
         if self.width.target() != target {
             let button = self.button.clone();
             self.width

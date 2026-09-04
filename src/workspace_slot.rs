@@ -25,6 +25,11 @@ pub struct WorkspaceSlot {
     stack: gtk::Stack,
     marker: gtk::Label,
     group: gtk::Box,
+    /// Workspace idx (or name), shown before the first tab -- the bloomed
+    /// view otherwise has no cue at all for which workspace you're
+    /// looking at. Matches niri-workspaces-rs's original convention of
+    /// prefixing the focused workspace's own glyph row the same way.
+    number: gtk::Label,
     tabs: BTreeMap<u64, Tab>,
     state: State,
     workspace_id: u64,
@@ -62,10 +67,15 @@ impl WorkspaceSlot {
         group.style_context().add_class("workspace-group");
         stack.add_named(&group, GROUP);
 
+        let number = gtk::Label::new(None);
+        number.style_context().add_class("workspace-number");
+        group.add(&number);
+
         let slot = Self {
             stack,
             marker,
             group,
+            number,
             tabs: BTreeMap::new(),
             state: state.clone(),
             workspace_id,
@@ -97,12 +107,27 @@ impl WorkspaceSlot {
         }
     }
 
-    /// Renders this workspace as bloomed: a full, column-grouped, animated
-    /// tab strip.
-    pub fn set_bloomed(&mut self, windows: &[crate::niri::Window], output_width: f64) {
+    /// Renders this workspace as bloomed: a workspace-number label
+    /// followed by a full, column-grouped, animated tab strip.
+    pub fn set_bloomed(
+        &mut self,
+        workspace: &WorkspaceInfo,
+        windows: &[crate::niri::Window],
+        output_width: f64,
+    ) {
+        let label = workspace
+            .name
+            .as_deref()
+            .filter(|n| !n.is_empty())
+            .map(str::to_string)
+            .unwrap_or_else(|| workspace.idx.to_string());
+        self.number.set_text(&label);
+        self.group.reorder_child(&self.number, 0);
+
         let columns = column::group(windows, output_width);
         let mut seen = std::collections::BTreeSet::new();
 
+        // Tabs start at position 1 -- position 0 is the workspace number.
         for (i, col) in columns.iter().enumerate() {
             seen.insert(col.window.id);
             match self.tabs.get(&col.window.id) {
@@ -114,7 +139,7 @@ impl WorkspaceSlot {
                 }
             }
             if let Some(tab) = self.tabs.get(&col.window.id) {
-                self.group.reorder_child(tab.widget(), i as i32);
+                self.group.reorder_child(tab.widget(), (i + 1) as i32);
             }
         }
 
