@@ -1,0 +1,16 @@
+[package]
+name = "colonnade-core"
+description = "Toolkit-independent niri tab-strip engine behind Colonnade: snapshot model, column grouping, tab width math, visible-slice anchoring, marker glyphs"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/yesvus/colonnade"
+rust-version = "1.87.0"
+
+[dependencies]
+async-channel = "2.5.0"
+async-stream = "0.3.6"
+futures = "0.3.31"
+niri-ipc = ">=25.11.0, <27"
+thiserror = "2.0.17"
+tracing = "0.1.43"

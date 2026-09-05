@@ -34,34 +34,17 @@ use waybar_cffi::gtk::{
     },
 };
 
-use crate::{
+use colonnade_core::{
     column::{self, Column},
     glyph,
     niri::{Window, WorkspaceInfo},
-    state::State,
-    tab::Tab,
+    slice,
 };
+
+use crate::{state::State, tab::Tab};
 
 const MARKER: &str = "marker";
 const GROUP: &str = "group";
-
-/// Greedily includes columns rightward from `start` while the running
-/// total stays within `budget_px`. Always includes at least the starting
-/// column even if it alone exceeds budget, so this never returns an
-/// empty range for a non-empty input.
-fn expand_right(columns: &[Column<'_>], start: usize, budget_px: i32) -> usize {
-    let mut width = 0;
-    let mut end = start;
-    while end < columns.len() {
-        let w = columns[end].target_width_px;
-        if end > start && width + w > budget_px {
-            break;
-        }
-        width += w;
-        end += 1;
-    }
-    end
-}
 
 /// Workspace idx, or its custom name if it has one. Shown always now, both
 /// bloomed and collapsed -- there was previously no way to tell which
@@ -340,33 +323,12 @@ impl WorkspaceSlot {
             .position(|c| c.window.is_focused || Some(c.window.id) == workspace.active_window_id)
             .unwrap_or(0);
 
-        let mut start = self
-            .anchor
-            .and_then(|id| columns.iter().position(|c| c.window.id == id))
-            .unwrap_or(current_idx);
-        let mut end = expand_right(&columns, start, max_group_width_px);
-
-        // Symmetric, zero-lookahead: shift exactly when focus reaches the
-        // visible slice's own edge tab, in either direction -- not one
-        // before it (too eager: with 5 visible tabs this was shifting at
-        // the 4th, not the 5th) and not one past it (too late: the
-        // previous left-edge behavior only reacted once focus had already
-        // moved one step *beyond* the first visible tab, i.e. off the end
-        // of the current slice, rather than reacting on the edge tab
-        // itself the way the right side now does). Both loops handle a
-        // single-column shift still leaving current at the edge (e.g. the
-        // next column is unusually wide), and a current that jumped more
-        // than one column away from the old anchor in a single update.
-        while current_idx <= start && start > 0 {
-            start -= 1;
-            end = expand_right(&columns, start, max_group_width_px);
-        }
-        while current_idx + 1 >= end && end < total {
-            start += 1;
-            end = expand_right(&columns, start, max_group_width_px);
-        }
-
-        self.anchor = Some(columns[start].window.id);
+        // Which columns fit the width budget, and where the visible
+        // slice is anchored -- see colonnade-core's `slice` module for
+        // the symmetric, zero-lookahead shift logic this wraps.
+        let slice::BloomedSlice { start, end, anchor } =
+            slice::compute(&columns, current_idx, self.anchor, max_group_width_px);
+        self.anchor = Some(anchor);
         let visible = &columns[start..end];
         // Windows outside the visible slice render as the same glyph tick
         // marks collapsed workspaces use, not a "+N" numeral -- one visual

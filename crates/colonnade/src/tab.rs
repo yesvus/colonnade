@@ -19,7 +19,9 @@ use waybar_cffi::gtk::{
     prelude::{BoxExt, ButtonExt, ContainerExt, LabelExt, StyleContextExt, WidgetExt},
 };
 
-use crate::{animate::Animator, column::Column, state::State};
+use colonnade_core::column::Column;
+
+use crate::{animate::Animator, state::State};
 
 /// Pixels between a tab's icon and its title. 6px, matching the gap the
 /// workspace number keeps from whatever follows it, so the two spacings on

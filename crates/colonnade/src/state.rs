@@ -1,17 +1,15 @@
 use std::sync::Arc;
 
 use async_channel::Sender;
+use colonnade_core::{
+    error::Error,
+    niri::{Niri, Snapshot, WindowStream},
+};
 use futures::{Stream, StreamExt};
 use niri_ipc::Workspace;
 use waybar_cffi::gtk::glib;
 
-use crate::{
-    config::Config,
-    error::Error,
-    icon,
-    niri::{Niri, Snapshot, WindowStream},
-    notify::{self, EnrichedNotification},
-};
+use crate::{config::Config, icon, notify::{self, EnrichedNotification}};
 
 /// Global state for the taskbar.
 #[derive(Debug, Clone)]

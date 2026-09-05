@@ -166,7 +166,7 @@ workspace layout on top of that foundation.
 Collapsed-workspace markers port the glyph vocabulary (`█`/`▌`/`|`/`¦`) and
 focus-semantics directly from
 [1jehuang/niri-workspaces-rs](https://github.com/1jehuang/niri-workspaces-rs)
-(`src/glyph.rs`) — Colonnade's fused layout absorbs that project's job
+(`crates/colonnade-core/src/glyph.rs`) — Colonnade's fused layout absorbs that project's job
 rather than running it as a second process alongside the tab strip, but
 the glyph logic itself is theirs.
 

@@ -3,10 +3,12 @@ use std::{
     sync::{Arc, LazyLock, Mutex},
 };
 
+use colonnade_core::{
+    error::Error,
+    niri::{Snapshot, WorkspaceInfo},
+};
 use config::Config;
-use error::Error;
 use futures::StreamExt;
-use niri::{Snapshot, WorkspaceInfo};
 use output::Matcher;
 use state::{Event, State};
 use tracing_subscriber::{EnvFilter, fmt::format::FmtSpan};
@@ -22,12 +24,8 @@ use waybar_cffi::{
 use workspace_slot::WorkspaceSlot;
 
 mod animate;
-mod column;
 mod config;
-mod error;
-mod glyph;
 mod icon;
-mod niri;
 mod notify;
 mod output;
 mod process;
