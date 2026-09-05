@@ -330,6 +330,24 @@ impl Window {
     pub fn output(&self) -> Option<&str> {
         self.output.as_deref()
     }
+
+    /// Builds a `Window` directly, rather than via a niri event stream.
+    ///
+    /// Both consumers of this crate (the GTK Waybar module and Lumen's
+    /// native port) render from `Window` values, but until now the only
+    /// way to obtain one was to receive a real `Event` from a live niri
+    /// socket. That made the *rendering* layers -- the width/slice/layout
+    /// logic that actually has interesting edge cases -- untestable
+    /// without a running compositor, so their regression tests could only
+    /// reach private helpers rather than the real entry points.
+    ///
+    /// The fields are otherwise reachable anyway (`Window` derefs to
+    /// `niri_ipc::Window`, and `output()` exposes the rest), so this adds
+    /// no access that callers didn't already have -- it only lets them
+    /// construct the value as well as read it.
+    pub fn new(window: NiriWindow, output: Option<String>) -> Self {
+        Self { window, output }
+    }
 }
 
 impl Deref for Window {
